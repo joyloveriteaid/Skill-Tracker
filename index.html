@@ -599,7 +599,8 @@ function App() {
     try {
       await fetch(scriptUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
           date: entryDate,
           period: activePeriod,
@@ -666,30 +667,28 @@ function App() {
     try {
       // Send Regents as one bulk request
       if (regentsEntries.length) {
-        const r1 = await fetch(scriptUrl, {
+        await fetch(scriptUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
           body: JSON.stringify({
             period: activePeriod, skillGroup: 'Regents',
             regentsSkills: state.regentsSkills, calcSkills: state.calcSkills,
             bulkRows: regentsEntries,
           }),
         });
-        const j1 = await r1.json();
-        if (!j1.success) throw new Error('Regents: ' + (j1.error || 'failed'));
       }
       if (calcEntries.length) {
-        const r2 = await fetch(scriptUrl, {
+        await fetch(scriptUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
           body: JSON.stringify({
             period: activePeriod, skillGroup: 'Calculator',
             regentsSkills: state.regentsSkills, calcSkills: state.calcSkills,
             bulkRows: calcEntries,
           }),
         });
-        const j2 = await r2.json();
-        if (!j2.success) throw new Error('Calculator: ' + (j2.error || 'failed'));
       }
       // Stamp sync time and save snapshot of synced scores
       const now = new Date().toISOString();
