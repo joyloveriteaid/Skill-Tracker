@@ -675,6 +675,7 @@ function App() {
             period: activePeriod, skillGroup: 'Regents',
             regentsSkills: state.regentsSkills, calcSkills: state.calcSkills,
             bulkRows: regentsEntries,
+            clearFirst: forceAll,
           }),
         });
       }
@@ -687,6 +688,7 @@ function App() {
             period: activePeriod, skillGroup: 'Calculator',
             regentsSkills: state.regentsSkills, calcSkills: state.calcSkills,
             bulkRows: calcEntries,
+            clearFirst: forceAll,
           }),
         });
       }
