@@ -515,7 +515,13 @@ function saveState(state) {
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function uid() { return Math.random().toString(36).slice(2,9); }
-function today() { return new Date().toISOString().slice(0,10); }
+function today() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
 
 function scoreKey(period, studentId, skillKey) {
   return `${period}|${studentId}|${skillKey}`;
@@ -599,12 +605,81 @@ function App() {
           skillIndex,
           skillGroup,
           score,
+          regentsSkills: state.regentsSkills,
+          calcSkills: state.calcSkills,
         })
       });
       setSyncStatus('ok');
       setTimeout(() => setSyncStatus('idle'), 2000);
     } catch(e) {
       setSyncStatus('error');
+    }
+  }
+
+  // ── sync all to sheets ──
+  async function syncAllToSheets() {
+    if (!scriptUrl) { showToast('No Sheets URL in Settings', 'var(--s1)'); return; }
+    const students = state.students[activePeriod] || [];
+    if (!students.length) { showToast('No students in this period', 'var(--s2)'); return; }
+
+    const allSkillsList = [
+      ...state.regentsSkills.map(k => ({ key: k, group: 'Regents' })),
+      ...state.calcSkills.map(k => ({ key: k, group: 'Calculator' })),
+    ];
+
+    // Collect all entries that have a score > 0
+    const entries = [];
+    for (const student of students) {
+      for (const skill of allSkillsList) {
+        const k = scoreKey(activePeriod, student.id, skill.key);
+        const entry = state.scores[k];
+        if (entry && entry.score > 0) {
+          const skillList = skill.group === 'Calculator' ? state.calcSkills : state.regentsSkills;
+          entries.push({
+            date: entry.date,
+            period: activePeriod,
+            student: student.name,
+            skill: skill.key,
+            skillIndex: skillList.indexOf(skill.key),
+            skillGroup: skill.group,
+            score: entry.score,
+          });
+        }
+      }
+    }
+
+    if (!entries.length) { showToast('No scores to sync', 'var(--s2)'); return; }
+
+    setSyncStatus('saving');
+    showToast(`Syncing ${entries.length} entries…`, 'var(--accent)');
+
+    let failed = 0;
+    for (const entry of entries) {
+      try {
+        await fetch(scriptUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...entry,
+            regentsSkills: state.regentsSkills,
+            calcSkills: state.calcSkills,
+          }),
+        });
+      } catch(e) {
+        failed++;
+      }
+      // Small delay to avoid overwhelming Apps Script
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+    if (failed === 0) {
+      setSyncStatus('ok');
+      showToast(`✓ Synced ${entries.length} entries to Sheets`);
+      setTimeout(() => setSyncStatus('idle'), 3000);
+    } else {
+      setSyncStatus('error');
+      showToast(`${failed} entries failed to sync`, 'var(--s1)');
     }
   }
 
@@ -662,6 +737,76 @@ function App() {
   const periodStudents = (state.students[activePeriod] || [])
     .filter(s => !filterStudent || s.name.toLowerCase().includes(filterStudent.toLowerCase()));
 
+  // ── export to CSV ──
+  function exportToCSV() {
+    const students = state.students[activePeriod] || [];
+    if (!students.length) { showToast('No students in this period', 'var(--s2)'); return; }
+
+    const regents = state.regentsSkills.map(k => ({ key: k, group: 'Regents' }));
+    const calc = state.calcSkills.map(k => ({ key: k, group: 'Calculator' }));
+    const allSkillsList = [...regents, ...calc];
+
+    // Build header row: Student, Date, 1-SkillA, 2-SkillB ...
+    const skillHeaders = allSkillsList.map((s, i) => `${i+1} - ${s.key}`);
+    const header = ['Student', 'Date', ...skillHeaders];
+
+    // Collect all unique student+date combos
+    const rowMap = {}; // "studentName|date" -> scores array
+    for (const student of students) {
+      for (const skill of allSkillsList) {
+        const k = scoreKey(activePeriod, student.id, skill.key);
+        const entry = state.scores[k];
+        if (entry && entry.score > 0) {
+          const rowKey = `${student.name}|||${entry.date}`;
+          if (!rowMap[rowKey]) {
+            rowMap[rowKey] = { student: student.name, date: entry.date, scores: new Array(allSkillsList.length).fill('') };
+          }
+          const idx = allSkillsList.findIndex(s => s.key === skill.key);
+          rowMap[rowKey].scores[idx] = entry.score;
+        }
+      }
+    }
+
+    const rows = Object.values(rowMap).sort((a, b) => {
+      if (a.student < b.student) return -1;
+      if (a.student > b.student) return 1;
+      return a.date < b.date ? -1 : 1;
+    });
+
+    if (!rows.length) { showToast('No scores to export', 'var(--s2)'); return; }
+
+    const csvLines = [
+      header.map(h => `"${h}"`).join(','),
+      ...rows.map(r => [`"${r.student}"`, `"${r.date}"`, ...r.scores].join(','))
+    ];
+
+    // Split into Regents and Calculator CSVs
+    const regentsHeader = ['Student', 'Date', ...regents.map((s,i) => `"${i+1} - ${s.key}"`)].join(',');
+    const calcHeader = ['Student', 'Date', ...calc.map((s,i) => `"${i+1} - ${s.key}"`)].join(',');
+
+    const regentsRows = Object.values(rowMap).sort((a,b) => a.student < b.student ? -1 : a.student > b.student ? 1 : a.date < b.date ? -1 : 1)
+      .map(r => [`"${r.student}"`, `"${r.date}"`, ...r.scores.slice(0, regents.length)].join(','));
+    const calcRows = Object.values(rowMap).sort((a,b) => a.student < b.student ? -1 : a.student > b.student ? 1 : a.date < b.date ? -1 : 1)
+      .map(r => [`"${r.student}"`, `"${r.date}"`, ...r.scores.slice(regents.length)].join(','));
+
+    // Download Regents CSV
+    const rBlob = new Blob([[regentsHeader, ...regentsRows].join('\n')], { type: 'text/csv' });
+    const rUrl = URL.createObjectURL(rBlob);
+    const rA = document.createElement('a');
+    rA.href = rUrl; rA.download = `${activePeriod} - Regents.csv`; rA.click();
+    URL.revokeObjectURL(rUrl);
+
+    // Small delay then download Calculator CSV
+    setTimeout(() => {
+      const cBlob = new Blob([[calcHeader, ...calcRows].join('\n')], { type: 'text/csv' });
+      const cUrl = URL.createObjectURL(cBlob);
+      const cA = document.createElement('a');
+      cA.href = cUrl; cA.download = `${activePeriod} - Calculator.csv`; cA.click();
+      URL.revokeObjectURL(cUrl);
+      showToast(`Exported ${rows.length} rows for ${activePeriod}`);
+    }, 300);
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <div>
@@ -676,6 +821,16 @@ function App() {
           ))}
         </div>
         <div className="header-sep" />
+        <button className="btn btn-ghost" style={{fontSize:12, padding:'5px 12px'}}
+          onClick={exportToCSV}>
+          ↓ Export CSV
+        </button>
+        {scriptUrl && (
+          <button className="btn btn-ghost" style={{fontSize:12, padding:'5px 12px'}}
+            onClick={syncAllToSheets} disabled={syncStatus==='saving'}>
+            ↑ Sync All
+          </button>
+        )}
         <div className="sync-badge">
           <div className={`sync-dot ${syncStatus==='ok'?'ok':syncStatus==='saving'?'saving':syncStatus==='error'?'error':''}`} />
           {syncStatus==='saving'?'Saving…':syncStatus==='ok'?'Saved':syncStatus==='error'?'Sync error':'Ready'}
@@ -818,45 +973,80 @@ function EntryView({ students, allSkills, getScore, setScore, filterStudent, set
 }
 
 function ScoreCell({ score, onChange }) {
-  const [open, setOpen] = React.useState(false);
-  const ref = React.useRef(null);
+  const [pos, setPos] = React.useState(null);
+  const btnRef = React.useRef(null);
 
+  // Close on outside click
   React.useEffect(() => {
-    if (!open) return;
-    function handler(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    if (!pos) return;
+    function handler(e) {
+      if (btnRef.current && btnRef.current.contains(e.target)) return;
+      if (e.target.closest('.score-popup')) return;
+      setPos(null);
+    }
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
+  }, [pos]);
+
+  // Close on scroll
+  React.useEffect(() => {
+    if (!pos) return;
+    function handler() { setPos(null); }
+    window.addEventListener('scroll', handler, true);
+    return () => window.removeEventListener('scroll', handler, true);
+  }, [pos]);
+
+  function handleOpen() {
+    if (pos) { setPos(null); return; }
+    const rect = btnRef.current.getBoundingClientRect();
+    setPos({ top: rect.bottom + 4, left: rect.left + rect.width / 2 });
+  }
+
+  const popup = pos ? ReactDOM.createPortal(
+    <div className="score-popup" style={{
+      position:'fixed',
+      top: pos.top,
+      left: pos.left,
+      transform: 'translateX(-50%)',
+      background:'var(--surface)',
+      border:'1px solid var(--border)',
+      borderRadius:8,
+      padding:6,
+      display:'flex',
+      flexDirection:'column',
+      gap:4,
+      zIndex:9999,
+      boxShadow:'0 8px 24px rgba(0,0,0,0.4)',
+      minWidth:120,
+    }}>
+      {[1,2,3,4].map(v => (
+        <button key={v} className={`score-btn s${v}`}
+          style={{width:'100%', height:28, borderRadius:6, fontSize:12, display:'flex', alignItems:'center', gap:8, justifyContent:'flex-start', padding:'0 8px'}}
+          onClick={() => { onChange(v); setPos(null); }}>
+          <span style={{fontFamily:'DM Mono', fontSize:13}}>{v}</span>
+          <span style={{fontSize:11}}>{SCORE_LABELS[v]}</span>
+        </button>
+      ))}
+      {score > 0 && (
+        <button className="score-btn s0"
+          style={{width:'100%', height:24, borderRadius:6, fontSize:11}}
+          onClick={() => { onChange(0); setPos(null); }}>Clear</button>
+      )}
+    </div>,
+    document.body
+  ) : null;
 
   return (
-    <div style={{position:'relative', display:'inline-block'}} ref={ref}>
+    <div style={{display:'inline-block'}}>
       <button
+        ref={btnRef}
         className={`score-btn s${score}`}
-        onClick={() => setOpen(o => !o)}
+        onClick={handleOpen}
         title={score > 0 ? SCORE_LABELS[score] : 'Not scored'}
       >
         {score > 0 ? score : '·'}
       </button>
-      {open && (
-        <div style={{
-          position:'absolute', top:'calc(100% + 4px)', left:'50%', transform:'translateX(-50%)',
-          background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8,
-          padding:6, display:'flex', flexDirection:'column', gap:4, zIndex:50,
-          boxShadow:'0 8px 24px rgba(0,0,0,0.4)', minWidth:100
-        }}>
-          {[1,2,3,4].map(v => (
-            <button key={v} className={`score-btn s${v}`} style={{width:'100%', height:28, borderRadius:6, fontSize:12, display:'flex', alignItems:'center', gap:8, justifyContent:'flex-start', padding:'0 8px'}}
-              onClick={() => { onChange(v); setOpen(false); }}>
-              <span style={{fontFamily:'DM Mono', fontSize:13}}>{v}</span>
-              <span style={{fontSize:11}}>{SCORE_LABELS[v]}</span>
-            </button>
-          ))}
-          {score > 0 && (
-            <button className="score-btn s0" style={{width:'100%', height:24, borderRadius:6, fontSize:11}}
-              onClick={() => { onChange(0); setOpen(false); }}>Clear</button>
-          )}
-        </div>
-      )}
+      {popup}
     </div>
   );
 }
