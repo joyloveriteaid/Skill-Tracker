@@ -666,6 +666,22 @@ function App() {
 
     try {
       // Send Regents as one bulk request
+      // If force sync, clear both sheets first then wait before writing
+      if (forceAll) {
+        await fetch(scriptUrl, {
+          method: 'POST', mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({ period: activePeriod, skillGroup: 'Regents', clearOnly: true, regentsSkills: state.regentsSkills, calcSkills: state.calcSkills }),
+        });
+        await fetch(scriptUrl, {
+          method: 'POST', mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({ period: activePeriod, skillGroup: 'Calculator', clearOnly: true, regentsSkills: state.regentsSkills, calcSkills: state.calcSkills }),
+        });
+        // Wait for clears to complete before writing
+        await new Promise(r => setTimeout(r, 2000));
+      }
+
       if (regentsEntries.length) {
         await fetch(scriptUrl, {
           method: 'POST',
@@ -675,7 +691,6 @@ function App() {
             period: activePeriod, skillGroup: 'Regents',
             regentsSkills: state.regentsSkills, calcSkills: state.calcSkills,
             bulkRows: regentsEntries,
-            clearFirst: forceAll,
           }),
         });
       }
@@ -688,7 +703,6 @@ function App() {
             period: activePeriod, skillGroup: 'Calculator',
             regentsSkills: state.regentsSkills, calcSkills: state.calcSkills,
             bulkRows: calcEntries,
-            clearFirst: forceAll,
           }),
         });
       }
