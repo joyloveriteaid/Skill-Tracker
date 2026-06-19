@@ -471,22 +471,9 @@
 <script type="text/babel">
 
 // ─── DEFAULT DATA ───────────────────────────────────────────────────────────
-const DEFAULT_REGENTS_SKILLS = [
-  "Polynomial Operations","Factoring","Rational Expressions","Radical Expressions",
-  "Complex Numbers","Quadratic Equations","Quadratic Formula","Systems of Equations",
-  "Absolute Value Equations","Inequalities","Functions – Domain & Range","Function Notation",
-  "Transformations of Functions","Inverse Functions","Exponential Functions","Logarithms",
-  "Exponential Equations","Log Equations","Sequences & Series","Arithmetic Sequences",
-  "Geometric Sequences","Trigonometry – Unit Circle","Sine & Cosine Graphs","Trig Equations",
-  "Law of Sines","Law of Cosines","Statistics – Normal Distribution","Regression & Correlation",
-  "Probability","Binomial Theorem"
-];
+const DEFAULT_REGENTS_SKILLS = [];
 
-const DEFAULT_CALC_SKILLS = [
-  "Graphing Functions","Finding Zeros","Intersection of Graphs","Table of Values",
-  "Regression (LinReg/QuadReg)","Storing Values","Evaluating Expressions","Solving Equations (Solver)",
-  "Trig Mode Settings","Stat Plots"
-];
+const DEFAULT_CALC_SKILLS = [];
 
 const DEFAULT_PERIODS = ["Period 1","Period 2","Period 3","Period 4","Period 5"];
 
@@ -665,8 +652,6 @@ function App() {
     showToast(`Syncing ${total} entries…`, 'var(--accent)');
 
     try {
-      // Send Regents as one bulk request
-      // If force sync, clear both sheets first then wait before writing
       if (forceAll) {
         await fetch(scriptUrl, {
           method: 'POST', mode: 'no-cors',
@@ -678,7 +663,6 @@ function App() {
           headers: { 'Content-Type': 'text/plain' },
           body: JSON.stringify({ period: activePeriod, skillGroup: 'Calculator', clearOnly: true, regentsSkills: state.regentsSkills, calcSkills: state.calcSkills }),
         });
-        // Wait for clears to complete before writing
         await new Promise(r => setTimeout(r, 2000));
       }
 
@@ -706,7 +690,6 @@ function App() {
           }),
         });
       }
-      // Stamp sync time and save snapshot of synced scores
       const now = new Date().toISOString();
       const newSnapshot = { ...state.syncedScores };
       const students2 = state.students[activePeriod] || [];
@@ -791,9 +774,8 @@ function App() {
       const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
       if (lines.length < 2) { showToast('CSV is empty', 'var(--s1)'); return; }
 
-      // Parse headers: Student, Date, 1-SkillA, 2-SkillB...
       const headers = lines[0].split(',').map(h => h.replace(/"/g,'').trim());
-      const skillHeaders = headers.slice(2); // skip Student, Date
+      const skillHeaders = headers.slice(2);
       const skillList = skillGroup === 'Calculator' ? state.calcSkills : state.regentsSkills;
 
       let imported = 0;
@@ -807,14 +789,12 @@ function App() {
           const date = cols[1];
           if (!studentName || !date) continue;
 
-          // Find student by name
           const student = students.find(s => s.name === studentName);
           if (!student) continue;
 
           for (let j = 0; j < skillHeaders.length; j++) {
             const val = parseInt(cols[j + 2]);
             if (isNaN(val) || val < 1 || val > 4) continue;
-            // Map column index to skill
             const skillKey = skillList[j];
             if (!skillKey) continue;
             const k = scoreKey(activePeriod, student.id, skillKey);
@@ -841,12 +821,10 @@ function App() {
     const calc = state.calcSkills.map(k => ({ key: k, group: 'Calculator' }));
     const allSkillsList = [...regents, ...calc];
 
-    // Build header row: Student, Date, 1-SkillA, 2-SkillB ...
     const skillHeaders = allSkillsList.map((s, i) => `${i+1} - ${s.key}`);
     const header = ['Student', 'Date', ...skillHeaders];
 
-    // Collect all unique student+date combos
-    const rowMap = {}; // "studentName|date" -> scores array
+    const rowMap = {};
     for (const student of students) {
       for (const skill of allSkillsList) {
         const k = scoreKey(activePeriod, student.id, skill.key);
@@ -870,12 +848,6 @@ function App() {
 
     if (!rows.length) { showToast('No scores to export', 'var(--s2)'); return; }
 
-    const csvLines = [
-      header.map(h => `"${h}"`).join(','),
-      ...rows.map(r => [`"${r.student}"`, `"${r.date}"`, ...r.scores].join(','))
-    ];
-
-    // Split into Regents and Calculator CSVs
     const regentsHeader = ['Student', 'Date', ...regents.map((s,i) => `"${i+1} - ${s.key}"`)].join(',');
     const calcHeader = ['Student', 'Date', ...calc.map((s,i) => `"${i+1} - ${s.key}"`)].join(',');
 
@@ -884,14 +856,12 @@ function App() {
     const calcRows = Object.values(rowMap).sort((a,b) => a.student < b.student ? -1 : a.student > b.student ? 1 : a.date < b.date ? -1 : 1)
       .map(r => [`"${r.student}"`, `"${r.date}"`, ...r.scores.slice(regents.length)].join(','));
 
-    // Download Regents CSV
     const rBlob = new Blob([[regentsHeader, ...regentsRows].join('\n')], { type: 'text/csv' });
     const rUrl = URL.createObjectURL(rBlob);
     const rA = document.createElement('a');
     rA.href = rUrl; rA.download = `${activePeriod} - Regents.csv`; rA.click();
     URL.revokeObjectURL(rUrl);
 
-    // Small delay then download Calculator CSV
     setTimeout(() => {
       const cBlob = new Blob([[calcHeader, ...calcRows].join('\n')], { type: 'text/csv' });
       const cUrl = URL.createObjectURL(cBlob);
@@ -1091,7 +1061,6 @@ function ScoreCell({ score, onChange }) {
   const [pos, setPos] = React.useState(null);
   const btnRef = React.useRef(null);
 
-  // Close on outside click
   React.useEffect(() => {
     if (!pos) return;
     function handler(e) {
@@ -1103,7 +1072,6 @@ function ScoreCell({ score, onChange }) {
     return () => document.removeEventListener('mousedown', handler);
   }, [pos]);
 
-  // Close on scroll
   React.useEffect(() => {
     if (!pos) return;
     function handler() { setPos(null); }
@@ -1496,7 +1464,6 @@ function SkillsImport({ state, setState, showToast }) {
     const reader = new FileReader();
     reader.onload = evt => {
       const text = evt.target.result;
-      // Handle CSV (first column) or plain text (one per line)
       let lines;
       if (file.name.endsWith('.csv')) {
         lines = text.split('\n').map(row => row.split(',')[0].replace(/"/g,'').trim()).filter(Boolean);
