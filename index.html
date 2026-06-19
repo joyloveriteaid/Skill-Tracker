@@ -1480,16 +1480,14 @@ function SkillsImport({ state, setState, showToast }) {
 
   function applyRegents() {
     const skills = parseSkills(regentsText);
-    if (!skills.length) return showToast('No skills found', 'var(--s1)');
     setState(prev => ({ ...prev, regentsSkills: skills }));
-    showToast(`${skills.length} Regents skills saved`);
+    showToast(skills.length ? `${skills.length} Regents skills saved` : 'Regents skills cleared');
   }
 
   function applyCalc() {
     const skills = parseSkills(calcText);
-    if (!skills.length) return showToast('No skills found', 'var(--s1)');
     setState(prev => ({ ...prev, calcSkills: skills }));
-    showToast(`${skills.length} Calculator skills saved`);
+    showToast(skills.length ? `${skills.length} Calculator skills saved` : 'Calculator skills cleared');
   }
 
   function handleFile(e, target) {
