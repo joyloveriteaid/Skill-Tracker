@@ -817,44 +817,41 @@ function App() {
     const students = state.students[activePeriod] || [];
     if (!students.length) { showToast('No students in this period', 'var(--s2)'); return; }
 
-    const regents = state.regentsSkills.map(k => ({ key: k, group: 'Regents' }));
-    const calc = state.calcSkills.map(k => ({ key: k, group: 'Calculator' }));
-    const allSkillsList = [...regents, ...calc];
+    const regents = state.regentsSkills.map(k => ({ key: k }));
+    const calc = state.calcSkills.map(k => ({ key: k }));
 
-    const skillHeaders = allSkillsList.map((s, i) => `${i+1} - ${s.key}`);
-    const header = ['Student', 'Date', ...skillHeaders];
+    const sortFn = (a, b) => a.student < b.student ? -1 : a.student > b.student ? 1 : a.date < b.date ? -1 : 1;
 
-    const rowMap = {};
-    for (const student of students) {
-      for (const skill of allSkillsList) {
-        const k = scoreKey(activePeriod, student.id, skill.key);
-        const entry = state.scores[k];
-        if (entry && entry.score > 0) {
-          const rowKey = `${student.name}|||${entry.date}`;
-          if (!rowMap[rowKey]) {
-            rowMap[rowKey] = { student: student.name, date: entry.date, scores: new Array(allSkillsList.length).fill('') };
+    function buildRowMap(skillList) {
+      const rowMap = {};
+      for (const student of students) {
+        for (let i = 0; i < skillList.length; i++) {
+          const k = scoreKey(activePeriod, student.id, skillList[i].key);
+          const entry = state.scores[k];
+          if (entry && entry.score > 0) {
+            const rowKey = `${student.name}|||${entry.date}`;
+            if (!rowMap[rowKey]) {
+              rowMap[rowKey] = { student: student.name, date: entry.date, scores: new Array(skillList.length).fill('') };
+            }
+            rowMap[rowKey].scores[i] = entry.score;
           }
-          const idx = allSkillsList.findIndex(s => s.key === skill.key);
-          rowMap[rowKey].scores[idx] = entry.score;
         }
       }
+      return rowMap;
     }
 
-    const rows = Object.values(rowMap).sort((a, b) => {
-      if (a.student < b.student) return -1;
-      if (a.student > b.student) return 1;
-      return a.date < b.date ? -1 : 1;
-    });
+    const regentsRowMap = buildRowMap(regents);
+    const calcRowMap = buildRowMap(calc);
 
-    if (!rows.length) { showToast('No scores to export', 'var(--s2)'); return; }
+    const regentsRows = Object.values(regentsRowMap).sort(sortFn)
+      .map(r => [`"${r.student}"`, `"${r.date}"`, ...r.scores].join(','));
+    const calcRows = Object.values(calcRowMap).sort(sortFn)
+      .map(r => [`"${r.student}"`, `"${r.date}"`, ...r.scores].join(','));
+
+    if (!regentsRows.length && !calcRows.length) { showToast('No scores to export', 'var(--s2)'); return; }
 
     const regentsHeader = ['Student', 'Date', ...regents.map((s,i) => `"${i+1} - ${s.key}"`)].join(',');
     const calcHeader = ['Student', 'Date', ...calc.map((s,i) => `"${i+1} - ${s.key}"`)].join(',');
-
-    const regentsRows = Object.values(rowMap).sort((a,b) => a.student < b.student ? -1 : a.student > b.student ? 1 : a.date < b.date ? -1 : 1)
-      .map(r => [`"${r.student}"`, `"${r.date}"`, ...r.scores.slice(0, regents.length)].join(','));
-    const calcRows = Object.values(rowMap).sort((a,b) => a.student < b.student ? -1 : a.student > b.student ? 1 : a.date < b.date ? -1 : 1)
-      .map(r => [`"${r.student}"`, `"${r.date}"`, ...r.scores.slice(regents.length)].join(','));
 
     const rBlob = new Blob([[regentsHeader, ...regentsRows].join('\n')], { type: 'text/csv' });
     const rUrl = URL.createObjectURL(rBlob);
@@ -868,7 +865,7 @@ function App() {
       const cA = document.createElement('a');
       cA.href = cUrl; cA.download = `${activePeriod} - Calculator.csv`; cA.click();
       URL.revokeObjectURL(cUrl);
-      showToast(`Exported ${rows.length} rows for ${activePeriod}`);
+      showToast(`Exported for ${activePeriod}`);
     }, 300);
   }
 
@@ -1222,9 +1219,28 @@ function ProgressView({ students, allSkills, getScore, getHistory, filterStudent
         <StudentProgress student={student} allSkills={allSkills} getScore={getScore} getHistory={getHistory} />
       ) : (
         <div className="progress-grid">
-          {students.map(s => (
+          {students.map(s => {
+            const regentsSkills = allSkills.filter(sk => sk.group === 'Regents');
+            const calcSkills = allSkills.filter(sk => sk.group === 'Calculator');
+            const regentsMastered = regentsSkills.filter(sk => getScore(s.id, sk.key) === 4).length;
+            const calcMastered = calcSkills.filter(sk => getScore(s.id, sk.key) === 4).length;
+            return (
             <div key={s.id} className="progress-card" style={{cursor:'pointer'}} onClick={() => setSelected(s.id)}>
               <div className="progress-student">{s.name}</div>
+              <div style={{display:'flex', gap:16, marginBottom:10}}>
+                {regentsSkills.length > 0 && (
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontFamily:'DM Mono', fontSize:18, fontWeight:500, color:'var(--s4)'}}>{regentsMastered}<span style={{fontSize:12, color:'var(--muted)'}}>/{regentsSkills.length}</span></div>
+                    <div style={{fontSize:10, color:'var(--muted)', marginTop:1}}>Regents mastered</div>
+                  </div>
+                )}
+                {calcSkills.length > 0 && (
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontFamily:'DM Mono', fontSize:18, fontWeight:500, color:'var(--accent)'}}>{calcMastered}<span style={{fontSize:12, color:'var(--muted)'}}>/{calcSkills.length}</span></div>
+                    <div style={{fontSize:10, color:'var(--muted)', marginTop:1}}>Calc mastered</div>
+                  </div>
+                )}
+              </div>
               {allSkills.slice(0,8).map(sk => {
                 const sc = getScore(s.id, sk.key);
                 return (
@@ -1242,7 +1258,8 @@ function ProgressView({ students, allSkills, getScore, getHistory, filterStudent
               })}
               {allSkills.length > 8 && <div style={{fontSize:11,color:'var(--muted)',marginTop:8}}>+{allSkills.length-8} more skills…</div>}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -1282,8 +1299,8 @@ function StudentProgress({ student, allSkills, getScore, getHistory }) {
     );
   }
 
-  const regentsDone = regents.filter(s => getScore(student.id, s.key) > 0).length;
-  const calcDone = calc.filter(s => getScore(student.id, s.key) > 0).length;
+  const regentsMastered = regents.filter(s => getScore(student.id, s.key) === 4).length;
+  const calcMastered = calc.filter(s => getScore(student.id, s.key) === 4).length;
 
   return (
     <div>
@@ -1291,9 +1308,8 @@ function StudentProgress({ student, allSkills, getScore, getHistory }) {
         <div className="student-card" style={{flex:'0 0 auto'}}>
           <div className="student-name-header">{student.name}</div>
           <div style={{display:'flex', gap:16}}>
-            <StatBox label="Regents scored" val={`${regentsDone}/${regents.length}`} />
-            <StatBox label="Calc scored" val={`${calcDone}/${calc.length}`} />
-            <StatBox label="Total scored" val={`${regentsDone+calcDone}/${regents.length+calc.length}`} />
+            <StatBox label="Regents mastered" val={`${regentsMastered}/${regents.length}`} color="var(--s4)" />
+            <StatBox label="Calc mastered" val={`${calcMastered}/${calc.length}`} color="var(--accent)" />
           </div>
         </div>
       </div>
@@ -1311,10 +1327,10 @@ function StudentProgress({ student, allSkills, getScore, getHistory }) {
   );
 }
 
-function StatBox({ label, val }) {
+function StatBox({ label, val, color='var(--accent)' }) {
   return (
     <div style={{textAlign:'center'}}>
-      <div style={{fontFamily:'DM Mono', fontSize:22, fontWeight:500, color:'var(--accent)'}}>{val}</div>
+      <div style={{fontFamily:'DM Mono', fontSize:22, fontWeight:500, color}}>{val}</div>
       <div style={{fontSize:11, color:'var(--muted)', marginTop:2}}>{label}</div>
     </div>
   );
