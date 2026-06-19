@@ -582,7 +582,10 @@ function App() {
     setSyncStatus('saving');
     const students = state.students[activePeriod] || [];
     const student = students.find(s => s.id === studentId);
-    const skillGroup = state.calcSkills.includes(skillKey) ? 'Calculator' : 'Regents';
+    const isCalc = state.calcSkills.includes(skillKey);
+    const skillGroup = isCalc ? 'Calculator' : 'Regents';
+    const skillList = isCalc ? state.calcSkills : state.regentsSkills;
+    const skillIndex = skillList.indexOf(skillKey);
     try {
       await fetch(scriptUrl, {
         method: 'POST',
@@ -593,6 +596,7 @@ function App() {
           period: activePeriod,
           student: student?.name || studentId,
           skill: skillKey,
+          skillIndex,
           skillGroup,
           score,
         })
