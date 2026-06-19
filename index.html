@@ -541,45 +541,50 @@ function App() {
     toastTimer.current = setTimeout(() => setToast(null), 3000);
   }
 
+  // ── refs to always have latest values (avoids stale closure) ──
+  const liveRef = React.useRef({});
+  liveRef.current = { state, activePeriod, scriptUrl, entryDate };
+
   // ── score update ── (auto-syncs to sheets on every click)
   function setScore(studentId, skillKey, score) {
-    const key = scoreKey(activePeriod, studentId, skillKey);
+    const { activePeriod: period, entryDate: date } = liveRef.current;
+    const key = scoreKey(period, studentId, skillKey);
     setState(prev => {
-      const existing = prev.scores[key] || { score: 0, date: entryDate, history: [] };
+      const existing = prev.scores[key] || { score: 0, date, history: [] };
       const history = [...(existing.history || [])];
       if (existing.score > 0) {
         history.push({ score: existing.score, date: existing.date });
       }
-      return { ...prev, scores: { ...prev.scores, [key]: { score, date: entryDate, history } } };
+      return { ...prev, scores: { ...prev.scores, [key]: { score, date, history } } };
     });
-    // auto-sync to sheets on every score click
-    if (scriptUrl) syncToSheets(studentId, skillKey, score, entryDate);
+    syncToSheets(studentId, skillKey, score);
   }
 
-  async function syncToSheets(studentId, skillKey, score, dateOverride) {
-    if (!scriptUrl) return;
+  async function syncToSheets(studentId, skillKey, score) {
+    const { state: s, activePeriod: period, scriptUrl: url, entryDate: date } = liveRef.current;
+    if (!url) return;
     setSyncStatus('saving');
-    const students = state.students[activePeriod] || [];
-    const student = students.find(s => s.id === studentId);
-    const isCalc = state.calcSkills.includes(skillKey);
+    const students = s.students[period] || [];
+    const student = students.find(st => st.id === studentId);
+    const isCalc = s.calcSkills.includes(skillKey);
     const skillGroup = isCalc ? 'Calculator' : 'Regents';
-    const skillList = isCalc ? state.calcSkills : state.regentsSkills;
+    const skillList = isCalc ? s.calcSkills : s.regentsSkills;
     const skillIndex = skillList.indexOf(skillKey);
     try {
-      await fetch(scriptUrl, {
+      await fetch(url, {
         method: 'POST',
         mode: 'no-cors',
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
-          date: dateOverride || entryDate,
-          period: activePeriod,
+          date,
+          period,
           student: student?.name || studentId,
           skill: skillKey,
           skillIndex,
           skillGroup,
           score,
-          regentsSkills: state.regentsSkills,
-          calcSkills: state.calcSkills,
+          regentsSkills: s.regentsSkills,
+          calcSkills: s.calcSkills,
         })
       });
       setSyncStatus('ok');
