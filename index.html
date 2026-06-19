@@ -595,7 +595,6 @@ function App() {
     try {
       await fetch(scriptUrl, {
         method: 'POST',
-        mode: 'no-cors',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           date: entryDate,
@@ -622,64 +621,67 @@ function App() {
     const students = state.students[activePeriod] || [];
     if (!students.length) { showToast('No students in this period', 'var(--s2)'); return; }
 
-    const allSkillsList = [
-      ...state.regentsSkills.map(k => ({ key: k, group: 'Regents' })),
-      ...state.calcSkills.map(k => ({ key: k, group: 'Calculator' })),
-    ];
+    // Collect all scored entries grouped by skill group
+    const regentsEntries = [];
+    const calcEntries = [];
 
-    // Collect all entries that have a score > 0
-    const entries = [];
     for (const student of students) {
-      for (const skill of allSkillsList) {
-        const k = scoreKey(activePeriod, student.id, skill.key);
+      for (const skillKey of state.regentsSkills) {
+        const k = scoreKey(activePeriod, student.id, skillKey);
         const entry = state.scores[k];
         if (entry && entry.score > 0) {
-          const skillList = skill.group === 'Calculator' ? state.calcSkills : state.regentsSkills;
-          entries.push({
-            date: entry.date,
-            period: activePeriod,
-            student: student.name,
-            skill: skill.key,
-            skillIndex: skillList.indexOf(skill.key),
-            skillGroup: skill.group,
-            score: entry.score,
-          });
+          regentsEntries.push({ date: entry.date, student: student.name, skill: skillKey, skillIndex: state.regentsSkills.indexOf(skillKey), score: entry.score });
+        }
+      }
+      for (const skillKey of state.calcSkills) {
+        const k = scoreKey(activePeriod, student.id, skillKey);
+        const entry = state.scores[k];
+        if (entry && entry.score > 0) {
+          calcEntries.push({ date: entry.date, student: student.name, skill: skillKey, skillIndex: state.calcSkills.indexOf(skillKey), score: entry.score });
         }
       }
     }
 
-    if (!entries.length) { showToast('No scores to sync', 'var(--s2)'); return; }
+    if (!regentsEntries.length && !calcEntries.length) { showToast('No scores to sync', 'var(--s2)'); return; }
 
     setSyncStatus('saving');
-    showToast(`Syncing ${entries.length} entries…`, 'var(--accent)');
+    const total = regentsEntries.length + calcEntries.length;
+    showToast(`Syncing ${total} entries…`, 'var(--accent)');
 
-    let failed = 0;
-    for (const entry of entries) {
-      try {
-        await fetch(scriptUrl, {
+    try {
+      // Send Regents as one bulk request
+      if (regentsEntries.length) {
+        const r1 = await fetch(scriptUrl, {
           method: 'POST',
-          mode: 'no-cors',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            ...entry,
-            regentsSkills: state.regentsSkills,
-            calcSkills: state.calcSkills,
+            period: activePeriod, skillGroup: 'Regents',
+            regentsSkills: state.regentsSkills, calcSkills: state.calcSkills,
+            bulkRows: regentsEntries,
           }),
         });
-      } catch(e) {
-        failed++;
+        const j1 = await r1.json();
+        if (!j1.success) throw new Error('Regents: ' + (j1.error || 'failed'));
       }
-      // Small delay to avoid overwhelming Apps Script
-      await new Promise(r => setTimeout(r, 100));
-    }
-
-    if (failed === 0) {
+      if (calcEntries.length) {
+        const r2 = await fetch(scriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            period: activePeriod, skillGroup: 'Calculator',
+            regentsSkills: state.regentsSkills, calcSkills: state.calcSkills,
+            bulkRows: calcEntries,
+          }),
+        });
+        const j2 = await r2.json();
+        if (!j2.success) throw new Error('Calculator: ' + (j2.error || 'failed'));
+      }
       setSyncStatus('ok');
-      showToast(`✓ Synced ${entries.length} entries to Sheets`);
+      showToast(`✓ Synced ${total} entries to Sheets`);
       setTimeout(() => setSyncStatus('idle'), 3000);
-    } else {
+    } catch(e) {
       setSyncStatus('error');
-      showToast(`${failed} entries failed to sync`, 'var(--s1)');
+      showToast('Sync failed: ' + e.message, 'var(--s1)');
     }
   }
 
