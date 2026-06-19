@@ -506,6 +506,8 @@ function loadState() {
     regentsSkills: DEFAULT_REGENTS_SKILLS,
     calcSkills: DEFAULT_CALC_SKILLS,
     scriptUrl: '',
+    lastSynced: null,   // ISO timestamp of last successful Sync All
+    syncedScores: {},   // snapshot of scores at last sync (for diff)
   };
 }
 
@@ -543,6 +545,8 @@ function App() {
   const [newStudentName, setNewStudentName] = React.useState('');
   const [newPeriodName, setNewPeriodName] = React.useState('');
   const [scriptUrl, setScriptUrl] = React.useState(() => loadState().scriptUrl || '');
+  const [lastSynced, setLastSynced] = React.useState(() => loadState().lastSynced || null);
+  const importFileRef = React.useRef(null);
   const toastTimer = React.useRef(null);
 
   // persist
@@ -616,12 +620,14 @@ function App() {
   }
 
   // ── sync all to sheets ──
-  async function syncAllToSheets() {
+  async function syncAllToSheets(forceAll = false) {
     if (!scriptUrl) { showToast('No Sheets URL in Settings', 'var(--s1)'); return; }
     const students = state.students[activePeriod] || [];
     if (!students.length) { showToast('No students in this period', 'var(--s2)'); return; }
 
-    // Collect all scored entries grouped by skill group
+    const syncedScores = state.syncedScores || {};
+
+    // Collect entries — only changed since last sync unless forceAll
     const regentsEntries = [];
     const calcEntries = [];
 
@@ -630,19 +636,28 @@ function App() {
         const k = scoreKey(activePeriod, student.id, skillKey);
         const entry = state.scores[k];
         if (entry && entry.score > 0) {
-          regentsEntries.push({ date: entry.date, student: student.name, skill: skillKey, skillIndex: state.regentsSkills.indexOf(skillKey), score: entry.score });
+          const lastSyncedScore = syncedScores[k];
+          if (forceAll || !lastSyncedScore || lastSyncedScore.score !== entry.score || lastSyncedScore.date !== entry.date) {
+            regentsEntries.push({ date: entry.date, student: student.name, skill: skillKey, skillIndex: state.regentsSkills.indexOf(skillKey), score: entry.score });
+          }
         }
       }
       for (const skillKey of state.calcSkills) {
         const k = scoreKey(activePeriod, student.id, skillKey);
         const entry = state.scores[k];
         if (entry && entry.score > 0) {
-          calcEntries.push({ date: entry.date, student: student.name, skill: skillKey, skillIndex: state.calcSkills.indexOf(skillKey), score: entry.score });
+          const lastSyncedScore = syncedScores[k];
+          if (forceAll || !lastSyncedScore || lastSyncedScore.score !== entry.score || lastSyncedScore.date !== entry.date) {
+            calcEntries.push({ date: entry.date, student: student.name, skill: skillKey, skillIndex: state.calcSkills.indexOf(skillKey), score: entry.score });
+          }
         }
       }
     }
 
-    if (!regentsEntries.length && !calcEntries.length) { showToast('No scores to sync', 'var(--s2)'); return; }
+    if (!regentsEntries.length && !calcEntries.length) {
+      showToast('✓ Already up to date — nothing to sync');
+      return;
+    }
 
     setSyncStatus('saving');
     const total = regentsEntries.length + calcEntries.length;
@@ -676,6 +691,20 @@ function App() {
         const j2 = await r2.json();
         if (!j2.success) throw new Error('Calculator: ' + (j2.error || 'failed'));
       }
+      // Stamp sync time and save snapshot of synced scores
+      const now = new Date().toISOString();
+      const newSnapshot = { ...state.syncedScores };
+      const students2 = state.students[activePeriod] || [];
+      for (const student of students2) {
+        for (const skillKey of [...state.regentsSkills, ...state.calcSkills]) {
+          const k = scoreKey(activePeriod, student.id, skillKey);
+          const entry = state.scores[k];
+          if (entry && entry.score > 0) newSnapshot[k] = { score: entry.score, date: entry.date };
+        }
+      }
+      setState(prev => ({ ...prev, lastSynced: now, syncedScores: newSnapshot }));
+      setLastSynced(now);
+
       setSyncStatus('ok');
       showToast(`✓ Synced ${total} entries to Sheets`);
       setTimeout(() => setSyncStatus('idle'), 3000);
@@ -738,6 +767,55 @@ function App() {
 
   const periodStudents = (state.students[activePeriod] || [])
     .filter(s => !filterStudent || s.name.toLowerCase().includes(filterStudent.toLowerCase()));
+
+  // ── import from CSV ──
+  function importFromCSV(file, skillGroup) {
+    const reader = new FileReader();
+    reader.onload = evt => {
+      const text = evt.target.result;
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      if (lines.length < 2) { showToast('CSV is empty', 'var(--s1)'); return; }
+
+      // Parse headers: Student, Date, 1-SkillA, 2-SkillB...
+      const headers = lines[0].split(',').map(h => h.replace(/"/g,'').trim());
+      const skillHeaders = headers.slice(2); // skip Student, Date
+      const skillList = skillGroup === 'Calculator' ? state.calcSkills : state.regentsSkills;
+
+      let imported = 0;
+      setState(prev => {
+        const newScores = { ...prev.scores };
+        const students = prev.students[activePeriod] || [];
+
+        for (let i = 1; i < lines.length; i++) {
+          const cols = lines[i].split(',').map(c => c.replace(/"/g,'').trim());
+          const studentName = cols[0];
+          const date = cols[1];
+          if (!studentName || !date) continue;
+
+          // Find student by name
+          const student = students.find(s => s.name === studentName);
+          if (!student) continue;
+
+          for (let j = 0; j < skillHeaders.length; j++) {
+            const val = parseInt(cols[j + 2]);
+            if (isNaN(val) || val < 1 || val > 4) continue;
+            // Map column index to skill
+            const skillKey = skillList[j];
+            if (!skillKey) continue;
+            const k = scoreKey(activePeriod, student.id, skillKey);
+            const existing = newScores[k] || { score: 0, date, history: [] };
+            const history = [...(existing.history || [])];
+            if (existing.score > 0) history.push({ score: existing.score, date: existing.date });
+            newScores[k] = { score: val, date, history };
+            imported++;
+          }
+        }
+        return { ...prev, scores: newScores };
+      });
+      setTimeout(() => showToast(`✓ Imported ${imported} scores from CSV`), 100);
+    };
+    reader.readAsText(file);
+  }
 
   // ── export to CSV ──
   function exportToCSV() {
@@ -823,19 +901,39 @@ function App() {
           ))}
         </div>
         <div className="header-sep" />
+        <input ref={importFileRef} type="file" accept=".csv" style={{display:'none'}}
+          onChange={e => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const isCalc = file.name.toLowerCase().includes('calculator');
+            importFromCSV(file, isCalc ? 'Calculator' : 'Regents');
+            e.target.value = '';
+          }} />
+        <button className="btn btn-ghost" style={{fontSize:12, padding:'5px 12px'}}
+          onClick={() => importFileRef.current.click()}>
+          ↑ Import CSV
+        </button>
         <button className="btn btn-ghost" style={{fontSize:12, padding:'5px 12px'}}
           onClick={exportToCSV}>
           ↓ Export CSV
         </button>
         {scriptUrl && (
           <button className="btn btn-ghost" style={{fontSize:12, padding:'5px 12px'}}
-            onClick={syncAllToSheets} disabled={syncStatus==='saving'}>
-            ↑ Sync All
+            onClick={() => syncAllToSheets(false)} disabled={syncStatus==='saving'}
+            title={lastSynced ? 'Last synced: ' + new Date(lastSynced).toLocaleString() : 'Never synced'}>
+            ↑ Sync{lastSynced ? ' Changes' : ' All'}
+          </button>
+        )}
+        {scriptUrl && lastSynced && (
+          <button className="btn btn-ghost" style={{fontSize:12, padding:'5px 12px', color:'var(--muted)'}}
+            onClick={() => syncAllToSheets(true)} disabled={syncStatus==='saving'}
+            title="Force resync everything">
+            ↺ Force Sync
           </button>
         )}
         <div className="sync-badge">
           <div className={`sync-dot ${syncStatus==='ok'?'ok':syncStatus==='saving'?'saving':syncStatus==='error'?'error':''}`} />
-          {syncStatus==='saving'?'Saving…':syncStatus==='ok'?'Saved':syncStatus==='error'?'Sync error':'Ready'}
+          {syncStatus==='saving'?'Saving…':syncStatus==='ok'?'Saved':syncStatus==='error'?'Sync error':lastSynced?'Synced '+new Date(lastSynced).toLocaleTimeString():'Ready'}
         </div>
       </div>
 
