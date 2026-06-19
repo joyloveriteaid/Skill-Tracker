@@ -7,6 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap');
 
@@ -472,12 +473,9 @@
 
 // ─── DEFAULT DATA ───────────────────────────────────────────────────────────
 const DEFAULT_REGENTS_SKILLS = [];
-
 const DEFAULT_CALC_SKILLS = [];
-
 const DEFAULT_PERIODS = ["Period 1","Period 2","Period 3","Period 4","Period 5"];
 
-const SCORE_COLORS = { 0:'--muted', 1:'--s1', 2:'--s2', 3:'--s3', 4:'--s4' };
 const SCORE_LABELS = { 1:'Beginning', 2:'Developing', 3:'Proficient', 4:'Mastery' };
 
 // ─── STORAGE ─────────────────────────────────────────────────────────────────
@@ -488,13 +486,13 @@ function loadState() {
   } catch(e) {}
   return {
     periods: DEFAULT_PERIODS,
-    students: {},   // periodName -> [{id, name}]
-    scores: {},     // `${periodName}|${studentId}|${skillKey}` -> {score, date, history:[{score,date}]}
+    students: {},
+    scores: {},
     regentsSkills: DEFAULT_REGENTS_SKILLS,
     calcSkills: DEFAULT_CALC_SKILLS,
     scriptUrl: '',
-    lastSynced: null,   // ISO timestamp of last successful Sync All
-    syncedScores: {},   // snapshot of scores at last sync (for diff)
+    lastSynced: null,
+    syncedScores: {},
   };
 }
 
@@ -525,9 +523,8 @@ function App() {
     return s.periods[0] || 'Period 1';
   });
   const [entryDate, setEntryDate] = React.useState(today());
-  const [syncStatus, setSyncStatus] = React.useState('idle'); // idle | saving | ok | error
+  const [syncStatus, setSyncStatus] = React.useState('idle');
   const [toast, setToast] = React.useState(null);
-  const [modal, setModal] = React.useState(null);
   const [filterStudent, setFilterStudent] = React.useState('');
   const [newStudentName, setNewStudentName] = React.useState('');
   const [newPeriodName, setNewPeriodName] = React.useState('');
@@ -536,7 +533,6 @@ function App() {
   const importFileRef = React.useRef(null);
   const toastTimer = React.useRef(null);
 
-  // persist
   React.useEffect(() => { saveState({...state, scriptUrl}); }, [state, scriptUrl]);
 
   function showToast(msg, color='var(--s3)') {
@@ -545,7 +541,7 @@ function App() {
     toastTimer.current = setTimeout(() => setToast(null), 3000);
   }
 
-  // ── score update ──
+  // ── score update ── (local only; sync via Sync buttons)
   function setScore(studentId, skillKey, score) {
     const key = scoreKey(activePeriod, studentId, skillKey);
     setState(prev => {
@@ -554,11 +550,8 @@ function App() {
       if (existing.score > 0) {
         history.push({ score: existing.score, date: existing.date });
       }
-      const updated = { score, date: entryDate, history };
-      return { ...prev, scores: { ...prev.scores, [key]: updated } };
+      return { ...prev, scores: { ...prev.scores, [key]: { score, date: entryDate, history } } };
     });
-    // sync to sheets
-    if (scriptUrl) syncToSheets(studentId, skillKey, score);
   }
 
   function getScore(studentId, skillKey) {
@@ -573,40 +566,6 @@ function App() {
     return [...(entry.history || []), ...(entry.score > 0 ? [{score: entry.score, date: entry.date}] : [])];
   }
 
-  // ── sync to sheets ──
-  async function syncToSheets(studentId, skillKey, score) {
-    if (!scriptUrl) return;
-    setSyncStatus('saving');
-    const students = state.students[activePeriod] || [];
-    const student = students.find(s => s.id === studentId);
-    const isCalc = state.calcSkills.includes(skillKey);
-    const skillGroup = isCalc ? 'Calculator' : 'Regents';
-    const skillList = isCalc ? state.calcSkills : state.regentsSkills;
-    const skillIndex = skillList.indexOf(skillKey);
-    try {
-      await fetch(scriptUrl, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
-          date: entryDate,
-          period: activePeriod,
-          student: student?.name || studentId,
-          skill: skillKey,
-          skillIndex,
-          skillGroup,
-          score,
-          regentsSkills: state.regentsSkills,
-          calcSkills: state.calcSkills,
-        })
-      });
-      setSyncStatus('ok');
-      setTimeout(() => setSyncStatus('idle'), 2000);
-    } catch(e) {
-      setSyncStatus('error');
-    }
-  }
-
   // ── sync all to sheets ──
   async function syncAllToSheets(forceAll = false) {
     if (!scriptUrl) { showToast('No Sheets URL in Settings', 'var(--s1)'); return; }
@@ -614,8 +573,6 @@ function App() {
     if (!students.length) { showToast('No students in this period', 'var(--s2)'); return; }
 
     const syncedScores = state.syncedScores || {};
-
-    // Collect entries — only changed since last sync unless forceAll
     const regentsEntries = [];
     const calcEntries = [];
 
@@ -652,24 +609,9 @@ function App() {
     showToast(`Syncing ${total} entries…`, 'var(--accent)');
 
     try {
-      if (forceAll) {
-        await fetch(scriptUrl, {
-          method: 'POST', mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({ period: activePeriod, skillGroup: 'Regents', clearOnly: true, regentsSkills: state.regentsSkills, calcSkills: state.calcSkills }),
-        });
-        await fetch(scriptUrl, {
-          method: 'POST', mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({ period: activePeriod, skillGroup: 'Calculator', clearOnly: true, regentsSkills: state.regentsSkills, calcSkills: state.calcSkills }),
-        });
-        await new Promise(r => setTimeout(r, 2000));
-      }
-
       if (regentsEntries.length) {
         await fetch(scriptUrl, {
-          method: 'POST',
-          mode: 'no-cors',
+          method: 'POST', mode: 'no-cors',
           headers: { 'Content-Type': 'text/plain' },
           body: JSON.stringify({
             period: activePeriod, skillGroup: 'Regents',
@@ -680,8 +622,7 @@ function App() {
       }
       if (calcEntries.length) {
         await fetch(scriptUrl, {
-          method: 'POST',
-          mode: 'no-cors',
+          method: 'POST', mode: 'no-cors',
           headers: { 'Content-Type': 'text/plain' },
           body: JSON.stringify({
             period: activePeriod, skillGroup: 'Calculator',
@@ -690,10 +631,10 @@ function App() {
           }),
         });
       }
+
       const now = new Date().toISOString();
       const newSnapshot = { ...state.syncedScores };
-      const students2 = state.students[activePeriod] || [];
-      for (const student of students2) {
+      for (const student of students) {
         for (const skillKey of [...state.regentsSkills, ...state.calcSkills]) {
           const k = scoreKey(activePeriod, student.id, skillKey);
           const entry = state.scores[k];
@@ -702,13 +643,12 @@ function App() {
       }
       setState(prev => ({ ...prev, lastSynced: now, syncedScores: newSnapshot }));
       setLastSynced(now);
-
       setSyncStatus('ok');
       showToast(`✓ Synced ${total} entries to Sheets`);
       setTimeout(() => setSyncStatus('idle'), 3000);
     } catch(e) {
       setSyncStatus('error');
-      showToast('Sync failed: ' + e.message, 'var(--s1)');
+      showToast('Sync failed', 'var(--s1)');
     }
   }
 
@@ -724,10 +664,7 @@ function App() {
       }
       return {
         ...prev,
-        students: {
-          ...prev.students,
-          [activePeriod]: [...periodStudents, { id: uid(), name }]
-        }
+        students: { ...prev.students, [activePeriod]: [...periodStudents, { id: uid(), name }] }
       };
     });
     setNewStudentName('');
@@ -736,10 +673,7 @@ function App() {
   function removeStudent(id) {
     setState(prev => ({
       ...prev,
-      students: {
-        ...prev.students,
-        [activePeriod]: (prev.students[activePeriod] || []).filter(s => s.id !== id)
-      }
+      students: { ...prev.students, [activePeriod]: (prev.students[activePeriod] || []).filter(s => s.id !== id) }
     }));
   }
 
@@ -766,63 +700,59 @@ function App() {
   const periodStudents = (state.students[activePeriod] || [])
     .filter(s => !filterStudent || s.name.toLowerCase().includes(filterStudent.toLowerCase()));
 
-  // ── import from CSV ──
-  function importFromCSV(file, skillGroup) {
+  // ── import from XLSX ──
+  function importFromXLSX(file) {
     const reader = new FileReader();
     reader.onload = evt => {
-      const text = evt.target.result;
-      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-      if (lines.length < 2) { showToast('CSV is empty', 'var(--s1)'); return; }
-
-      const headers = lines[0].split(',').map(h => h.replace(/"/g,'').trim());
-      const skillHeaders = headers.slice(2);
-      const skillList = skillGroup === 'Calculator' ? state.calcSkills : state.regentsSkills;
-
+      const wb = XLSX.read(evt.target.result, { type: 'array' });
+      const sheetMap = { 'Regents': state.regentsSkills, 'Calculator': state.calcSkills };
       let imported = 0;
       setState(prev => {
         const newScores = { ...prev.scores };
         const students = prev.students[activePeriod] || [];
-
-        for (let i = 1; i < lines.length; i++) {
-          const cols = lines[i].split(',').map(c => c.replace(/"/g,'').trim());
-          const studentName = cols[0];
-          const date = cols[1];
-          if (!studentName || !date) continue;
-
-          const student = students.find(s => s.name === studentName);
-          if (!student) continue;
-
-          for (let j = 0; j < skillHeaders.length; j++) {
-            const val = parseInt(cols[j + 2]);
-            if (isNaN(val) || val < 1 || val > 4) continue;
-            const skillKey = skillList[j];
-            if (!skillKey) continue;
-            const k = scoreKey(activePeriod, student.id, skillKey);
-            const existing = newScores[k] || { score: 0, date, history: [] };
-            const history = [...(existing.history || [])];
-            if (existing.score > 0) history.push({ score: existing.score, date: existing.date });
-            newScores[k] = { score: val, date, history };
-            imported++;
+        for (const [sheetName, skillList] of Object.entries(sheetMap)) {
+          const ws = wb.Sheets[sheetName];
+          if (!ws) continue;
+          const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+          if (rows.length < 2) continue;
+          for (let i = 1; i < rows.length; i++) {
+            const cols = rows[i];
+            const studentName = String(cols[0] || '').trim();
+            const date = String(cols[1] || '').trim();
+            if (!studentName || !date) continue;
+            const student = students.find(s => s.name === studentName);
+            if (!student) continue;
+            for (let j = 0; j < skillList.length; j++) {
+              const val = parseInt(cols[j + 2]);
+              if (isNaN(val) || val < 1 || val > 4) continue;
+              const skillKey = skillList[j];
+              if (!skillKey) continue;
+              const k = scoreKey(activePeriod, student.id, skillKey);
+              const existing = newScores[k] || { score: 0, date, history: [] };
+              const history = [...(existing.history || [])];
+              if (existing.score > 0) history.push({ score: existing.score, date: existing.date });
+              newScores[k] = { score: val, date, history };
+              imported++;
+            }
           }
         }
         return { ...prev, scores: newScores };
       });
-      setTimeout(() => showToast(`✓ Imported ${imported} scores from CSV`), 100);
+      setTimeout(() => showToast(`✓ Imported ${imported} scores from XLSX`), 100);
     };
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   }
 
   // ── export to CSV ──
-  function exportToCSV() {
+  function exportToXLSX() {
     const students = state.students[activePeriod] || [];
     if (!students.length) { showToast('No students in this period', 'var(--s2)'); return; }
 
     const regents = state.regentsSkills.map(k => ({ key: k }));
     const calc = state.calcSkills.map(k => ({ key: k }));
-
     const sortFn = (a, b) => a.student < b.student ? -1 : a.student > b.student ? 1 : a.date < b.date ? -1 : 1;
 
-    function buildRowMap(skillList) {
+    function buildRows(skillList) {
       const rowMap = {};
       for (const student of students) {
         for (let i = 0; i < skillList.length; i++) {
@@ -837,36 +767,26 @@ function App() {
           }
         }
       }
-      return rowMap;
+      return Object.values(rowMap).sort(sortFn);
     }
 
-    const regentsRowMap = buildRowMap(regents);
-    const calcRowMap = buildRowMap(calc);
+    function makeSheet(skillList, rows, offset = 0) {
+      const header = ['Student', 'Date', ...skillList.map((s, i) => `${offset + i + 1} - ${s.key}`)];
+      const data = [header, ...rows.map(r => [r.student, r.date, ...r.scores])];
+      return XLSX.utils.aoa_to_sheet(data);
+    }
 
-    const regentsRows = Object.values(regentsRowMap).sort(sortFn)
-      .map(r => [`"${r.student}"`, `"${r.date}"`, ...r.scores].join(','));
-    const calcRows = Object.values(calcRowMap).sort(sortFn)
-      .map(r => [`"${r.student}"`, `"${r.date}"`, ...r.scores].join(','));
+    const regentsRows = buildRows(regents);
+    const calcRows = buildRows(calc);
 
     if (!regentsRows.length && !calcRows.length) { showToast('No scores to export', 'var(--s2)'); return; }
 
-    const regentsHeader = ['Student', 'Date', ...regents.map((s,i) => `"${i+1} - ${s.key}"`)].join(',');
-    const calcHeader = ['Student', 'Date', ...calc.map((s,i) => `"${i+1} - ${s.key}"`)].join(',');
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, makeSheet(regents, regentsRows, 0), 'Regents');
+    XLSX.utils.book_append_sheet(wb, makeSheet(calc, calcRows, regents.length), 'Calculator');
 
-    const rBlob = new Blob([[regentsHeader, ...regentsRows].join('\n')], { type: 'text/csv' });
-    const rUrl = URL.createObjectURL(rBlob);
-    const rA = document.createElement('a');
-    rA.href = rUrl; rA.download = `${activePeriod} - Regents.csv`; rA.click();
-    URL.revokeObjectURL(rUrl);
-
-    setTimeout(() => {
-      const cBlob = new Blob([[calcHeader, ...calcRows].join('\n')], { type: 'text/csv' });
-      const cUrl = URL.createObjectURL(cBlob);
-      const cA = document.createElement('a');
-      cA.href = cUrl; cA.download = `${activePeriod} - Calculator.csv`; cA.click();
-      URL.revokeObjectURL(cUrl);
-      showToast(`Exported for ${activePeriod}`);
-    }, 300);
+    XLSX.writeFile(wb, `${activePeriod}.xlsx`);
+    showToast(`Exported ${activePeriod}.xlsx`);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -883,21 +803,20 @@ function App() {
           ))}
         </div>
         <div className="header-sep" />
-        <input ref={importFileRef} type="file" accept=".csv" style={{display:'none'}}
+        <input ref={importFileRef} type="file" accept=".xlsx" style={{display:'none'}}
           onChange={e => {
             const file = e.target.files[0];
             if (!file) return;
-            const isCalc = file.name.toLowerCase().includes('calculator');
-            importFromCSV(file, isCalc ? 'Calculator' : 'Regents');
+            importFromXLSX(file);
             e.target.value = '';
           }} />
         <button className="btn btn-ghost" style={{fontSize:12, padding:'5px 12px'}}
           onClick={() => importFileRef.current.click()}>
-          ↑ Import CSV
+          ↑ Import XLSX
         </button>
         <button className="btn btn-ghost" style={{fontSize:12, padding:'5px 12px'}}
-          onClick={exportToCSV}>
-          ↓ Export CSV
+          onClick={exportToXLSX}>
+          ↓ Export XLSX
         </button>
         {scriptUrl && (
           <button className="btn btn-ghost" style={{fontSize:12, padding:'5px 12px'}}
@@ -931,7 +850,6 @@ function App() {
           </div>
         )}
 
-        {/* ── ENTRY TAB ── */}
         {tab === 'entry' && <EntryView
           students={periodStudents}
           allSkills={allSkills}
@@ -945,7 +863,6 @@ function App() {
           showToast={showToast}
         />}
 
-        {/* ── HEATMAP TAB ── */}
         {tab === 'heatmap' && <HeatmapView
           students={periodStudents}
           allSkills={allSkills}
@@ -954,7 +871,6 @@ function App() {
           setFilterStudent={setFilterStudent}
         />}
 
-        {/* ── PROGRESS TAB ── */}
         {tab === 'progress' && <ProgressView
           students={periodStudents}
           allSkills={allSkills}
@@ -964,7 +880,6 @@ function App() {
           setFilterStudent={setFilterStudent}
         />}
 
-        {/* ── SETTINGS TAB ── */}
         {tab === 'settings' && <SettingsView
           state={state}
           setState={setState}
@@ -1034,9 +949,22 @@ function EntryView({ students, allSkills, getScore, setScore, filterStudent, set
             </tr>
           </thead>
           <tbody>
-            {students.map(student => (
+            {students.map(student => {
+              return (
               <tr key={student.id}>
-                <td className="student-col">{student.name}</td>
+                <td className="student-col">
+                  <div style={{display:'flex', alignItems:'center', gap:8}}>
+                    <span>{student.name}</span>
+                    {allSkills.length > 0 && (() => {
+                      const mastered = allSkills.filter(s => getScore(student.id, s.key) === 4).length;
+                      return (
+                        <span style={{fontFamily:'DM Mono', fontSize:10, color:'var(--s4)', background:'var(--s4-bg)', border:'1px solid var(--border)', borderRadius:4, padding:'1px 5px', whiteSpace:'nowrap'}}>
+                          {mastered}/{allSkills.length}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                </td>
                 {allSkills.map(s => {
                   const score = getScore(student.id, s.key);
                   return (
@@ -1046,7 +974,8 @@ function EntryView({ students, allSkills, getScore, setScore, filterStudent, set
                   );
                 })}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -1084,20 +1013,11 @@ function ScoreCell({ score, onChange }) {
 
   const popup = pos ? ReactDOM.createPortal(
     <div className="score-popup" style={{
-      position:'fixed',
-      top: pos.top,
-      left: pos.left,
+      position:'fixed', top: pos.top, left: pos.left,
       transform: 'translateX(-50%)',
-      background:'var(--surface)',
-      border:'1px solid var(--border)',
-      borderRadius:8,
-      padding:6,
-      display:'flex',
-      flexDirection:'column',
-      gap:4,
-      zIndex:9999,
-      boxShadow:'0 8px 24px rgba(0,0,0,0.4)',
-      minWidth:120,
+      background:'var(--surface)', border:'1px solid var(--border)',
+      borderRadius:8, padding:6, display:'flex', flexDirection:'column',
+      gap:4, zIndex:9999, boxShadow:'0 8px 24px rgba(0,0,0,0.4)', minWidth:120,
     }}>
       {[1,2,3,4].map(v => (
         <button key={v} className={`score-btn s${v}`}
@@ -1118,12 +1038,8 @@ function ScoreCell({ score, onChange }) {
 
   return (
     <div style={{display:'inline-block'}}>
-      <button
-        ref={btnRef}
-        className={`score-btn s${score}`}
-        onClick={handleOpen}
-        title={score > 0 ? SCORE_LABELS[score] : 'Not scored'}
-      >
+      <button ref={btnRef} className={`score-btn s${score}`} onClick={handleOpen}
+        title={score > 0 ? SCORE_LABELS[score] : 'Not scored'}>
         {score > 0 ? score : '·'}
       </button>
       {popup}
@@ -1173,7 +1089,6 @@ function HeatmapView({ students, allSkills, getScore, filterStudent, setFilterSt
                 })}
               </tr>
             ))}
-            {/* Class averages row */}
             <tr style={{borderTop:'2px solid var(--border)'}}>
               <td className="student-col" style={{color:'var(--accent)', fontSize:11, fontWeight:600}}>CLASS AVG</td>
               {allSkills.map(s => {
@@ -1225,39 +1140,39 @@ function ProgressView({ students, allSkills, getScore, getHistory, filterStudent
             const regentsMastered = regentsSkills.filter(sk => getScore(s.id, sk.key) === 4).length;
             const calcMastered = calcSkills.filter(sk => getScore(s.id, sk.key) === 4).length;
             return (
-            <div key={s.id} className="progress-card" style={{cursor:'pointer'}} onClick={() => setSelected(s.id)}>
-              <div className="progress-student">{s.name}</div>
-              <div style={{display:'flex', gap:16, marginBottom:10}}>
-                {regentsSkills.length > 0 && (
-                  <div style={{textAlign:'center'}}>
-                    <div style={{fontFamily:'DM Mono', fontSize:18, fontWeight:500, color:'var(--s4)'}}>{regentsMastered}<span style={{fontSize:12, color:'var(--muted)'}}>/{regentsSkills.length}</span></div>
-                    <div style={{fontSize:10, color:'var(--muted)', marginTop:1}}>Regents mastered</div>
-                  </div>
-                )}
-                {calcSkills.length > 0 && (
-                  <div style={{textAlign:'center'}}>
-                    <div style={{fontFamily:'DM Mono', fontSize:18, fontWeight:500, color:'var(--accent)'}}>{calcMastered}<span style={{fontSize:12, color:'var(--muted)'}}>/{calcSkills.length}</span></div>
-                    <div style={{fontSize:10, color:'var(--muted)', marginTop:1}}>Calc mastered</div>
-                  </div>
-                )}
-              </div>
-              {allSkills.slice(0,8).map(sk => {
-                const sc = getScore(s.id, sk.key);
-                return (
-                  <div key={sk.key} className="progress-skill-row">
-                    <span className="progress-skill-name" title={sk.label}>{sk.label}</span>
-                    <div className="progress-bar-bg">
-                      <div className="progress-bar-fill" style={{
-                        width: sc ? `${sc/4*100}%` : '0%',
-                        background: sc===1?'var(--s1)':sc===2?'var(--s2)':sc===3?'var(--s3)':sc===4?'var(--s4)':'var(--surface2)'
-                      }} />
+              <div key={s.id} className="progress-card" style={{cursor:'pointer'}} onClick={() => setSelected(s.id)}>
+                <div className="progress-student">{s.name}</div>
+                <div style={{display:'flex', gap:16, marginBottom:10}}>
+                  {regentsSkills.length > 0 && (
+                    <div style={{textAlign:'center'}}>
+                      <div style={{fontFamily:'DM Mono', fontSize:18, fontWeight:500, color:'var(--s4)'}}>{regentsMastered}<span style={{fontSize:12, color:'var(--muted)'}}>/{regentsSkills.length}</span></div>
+                      <div style={{fontSize:10, color:'var(--muted)', marginTop:1}}>Regents mastered</div>
                     </div>
-                    <span className="progress-val" style={{color: sc?`var(--s${sc})`:'var(--muted)'}}>{sc||'—'}</span>
-                  </div>
-                );
-              })}
-              {allSkills.length > 8 && <div style={{fontSize:11,color:'var(--muted)',marginTop:8}}>+{allSkills.length-8} more skills…</div>}
-            </div>
+                  )}
+                  {calcSkills.length > 0 && (
+                    <div style={{textAlign:'center'}}>
+                      <div style={{fontFamily:'DM Mono', fontSize:18, fontWeight:500, color:'var(--accent)'}}>{calcMastered}<span style={{fontSize:12, color:'var(--muted)'}}>/{calcSkills.length}</span></div>
+                      <div style={{fontSize:10, color:'var(--muted)', marginTop:1}}>Calc mastered</div>
+                    </div>
+                  )}
+                </div>
+                {allSkills.slice(0,8).map(sk => {
+                  const sc = getScore(s.id, sk.key);
+                  return (
+                    <div key={sk.key} className="progress-skill-row">
+                      <span className="progress-skill-name" title={sk.label}>{sk.label}</span>
+                      <div className="progress-bar-bg">
+                        <div className="progress-bar-fill" style={{
+                          width: sc ? `${sc/4*100}%` : '0%',
+                          background: sc===1?'var(--s1)':sc===2?'var(--s2)':sc===3?'var(--s3)':sc===4?'var(--s4)':'var(--surface2)'
+                        }} />
+                      </div>
+                      <span className="progress-val" style={{color: sc?`var(--s${sc})`:'var(--muted)'}}>{sc||'—'}</span>
+                    </div>
+                  );
+                })}
+                {allSkills.length > 8 && <div style={{fontSize:11,color:'var(--muted)',marginTop:8}}>+{allSkills.length-8} more skills…</div>}
+              </div>
             );
           })}
         </div>
@@ -1384,22 +1299,16 @@ function SettingsView({ state, setState, activePeriod, setActivePeriod, newStude
             ))}
           </div>
         </div>
-
-        {/* single add */}
         <div className="settings-row" style={{marginBottom:16}}>
           <input type="text" className="settings-input" placeholder="Student name…" value={newStudentName} onChange={e=>setNewStudentName(e.target.value)}
             onKeyDown={e=>e.key==='Enter'&&addStudent()} />
           <button className="btn btn-primary" onClick={addStudent}>Add</button>
         </div>
-
-        {/* bulk add */}
         <div className="modal-field" style={{marginBottom:12}}>
           <label>Bulk add (one name per line)</label>
           <textarea value={bulkText} onChange={e=>setBulkText(e.target.value)} placeholder={"Alice\nBob\nCarlos"} style={{background:'var(--bg)'}} />
         </div>
         <button className="btn btn-ghost" onClick={() => { bulkAddStudents(bulkText); setBulkText(''); }}>Add All</button>
-
-        {/* list */}
         <div style={{marginTop:16, maxHeight:300, overflowY:'auto'}}>
           {(state.students[activePeriod]||[]).map(s => (
             <div key={s.id} className="student-list-item">
@@ -1413,14 +1322,13 @@ function SettingsView({ state, setState, activePeriod, setActivePeriod, newStude
         </div>
       </div>
 
-      {/* Skills Import */}
       <SkillsImport state={state} setState={setState} showToast={showToast} />
 
       {/* Google Sheets Sync */}
       <div className="settings-section">
         <div className="settings-title">Google Sheets Sync</div>
         <p style={{fontSize:13,color:'var(--muted)',marginBottom:12,lineHeight:1.6}}>
-          Paste your Apps Script Web App URL below. Every score you enter will be logged to your Google Sheet as a row: <span style={{fontFamily:'DM Mono',fontSize:11,color:'var(--accent)'}}>date | period | student | skill | score</span>
+          Paste your Apps Script Web App URL below. Use <strong style={{color:'var(--text)'}}>Sync Changes</strong> or <strong style={{color:'var(--text)'}}>Force Sync</strong> in the header to push scores to your Sheet.
         </p>
         <div className="settings-row">
           <input type="text" className="settings-input" style={{flex:1}} placeholder="https://script.google.com/macros/s/…/exec"
@@ -1516,10 +1424,8 @@ function SkillsImport({ state, setState, showToast }) {
     <div className="settings-section">
       <div className="settings-title">Skills</div>
       <p style={{fontSize:13,color:'var(--muted)',marginBottom:14,lineHeight:1.6}}>
-        Edit skill names directly, or import from a <strong style={{color:'var(--text)'}}>CSV</strong> or <strong style={{color:'var(--text)'}}>TXT</strong> file (one skill per line). Numbers are added automatically in the Sheet headers.
+        Edit skill names directly, or import from a <strong style={{color:'var(--text)'}}>CSV</strong> or <strong style={{color:'var(--text)'}}>TXT</strong> file (one skill per line).
       </p>
-
-      {/* Sub-tabs */}
       <div className="nav-tabs" style={{marginBottom:14, width:'fit-content'}}>
         <button className={`nav-tab ${tab==='regents'?'active':''}`} onClick={() => setTab('regents')}>
           Regents ({state.regentsSkills.length})
@@ -1528,8 +1434,6 @@ function SkillsImport({ state, setState, showToast }) {
           Calculator ({state.calcSkills.length})
         </button>
       </div>
-
-      {/* File import */}
       <div style={{display:'flex', gap:8, marginBottom:12, alignItems:'center'}}>
         <button className="btn btn-ghost" onClick={() => isRegents ? regentsFileRef.current.click() : calcFileRef.current.click()}>
           📂 Import from file
@@ -1538,8 +1442,6 @@ function SkillsImport({ state, setState, showToast }) {
         <input ref={regentsFileRef} type="file" accept=".txt,.csv" style={{display:'none'}} onChange={e => handleFile(e,'regents')} />
         <input ref={calcFileRef} type="file" accept=".txt,.csv" style={{display:'none'}} onChange={e => handleFile(e,'calc')} />
       </div>
-
-      {/* Text editor */}
       <div className="modal-field" style={{marginBottom:10}}>
         <label>One skill per line — {currentCount} skills</label>
         <textarea
@@ -1549,13 +1451,10 @@ function SkillsImport({ state, setState, showToast }) {
           placeholder="Enter one skill per line…"
         />
       </div>
-
       <div style={{display:'flex', gap:8}}>
         <button className="btn btn-primary" onClick={isRegents ? applyRegents : applyCalc}>Save Skills</button>
         <button className="btn btn-ghost" onClick={isRegents ? resetRegents : resetCalc}>Reset to Defaults</button>
       </div>
-
-      {/* Preview */}
       <div style={{marginTop:14, background:'var(--bg)', borderRadius:8, padding:12}}>
         <div style={{fontSize:11, color:'var(--muted)', marginBottom:8, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em'}}>Sheet column preview</div>
         <div style={{display:'flex', flexWrap:'wrap', gap:4}}>
