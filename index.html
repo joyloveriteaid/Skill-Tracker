@@ -1,0 +1,1307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>A2 Skill Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3354;
+    --text: #e8eaf2;
+    --muted: #7b80a0;
+    --accent: #6c8eff;
+    --accent2: #a78bfa;
+
+    --s1: #ef4444;
+    --s2: #f97316;
+    --s3: #22c55e;
+    --s4: #6c8eff;
+
+    --s1-bg: #3b1111;
+    --s2-bg: #3b1f0a;
+    --s3-bg: #0f3320;
+    --s4-bg: #131e40;
+  }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* HEADER */
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    height: 56px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: 0.02em;
+  }
+  .header-title span { color: var(--accent); }
+  .header-sep { flex: 1; }
+
+  /* NAV TABS */
+  .nav-tabs {
+    display: flex;
+    gap: 2px;
+    background: var(--surface2);
+    border-radius: 8px;
+    padding: 3px;
+  }
+  .nav-tab {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--muted);
+    background: none;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .nav-tab.active {
+    background: var(--surface);
+    color: var(--text);
+  }
+  .nav-tab:hover:not(.active) { color: var(--text); }
+
+  /* STATUS BADGE */
+  .sync-badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .sync-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--muted);
+  }
+  .sync-dot.ok { background: #22c55e; }
+  .sync-dot.saving { background: #f97316; animation: pulse 1s infinite; }
+  .sync-dot.error { background: #ef4444; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  /* MAIN */
+  .main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+
+  /* TOOLBAR */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .toolbar-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  select, input[type="text"] {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 7px 12px;
+    border-radius: 7px;
+    outline: none;
+    cursor: pointer;
+  }
+  select:focus, input[type="text"]:focus { border-color: var(--accent); }
+  input[type="text"] { width: 180px; }
+
+  .btn {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 7px 16px;
+    border-radius: 7px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #8aaaff; }
+  .btn-ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-danger { background: #3b1111; color: #ef4444; border: 1px solid #5c2020; }
+  .btn-danger:hover { background: #5c2020; }
+
+  /* SCORE BUTTONS */
+  .score-btn {
+    width: 32px; height: 32px;
+    border-radius: 6px;
+    border: none;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.12s;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .score-btn.s0 { background: var(--surface2); color: var(--muted); }
+  .score-btn.s0:hover { background: var(--border); color: var(--text); }
+  .score-btn.s1 { background: var(--s1-bg); color: var(--s1); }
+  .score-btn.s2 { background: var(--s2-bg); color: var(--s2); }
+  .score-btn.s3 { background: var(--s3-bg); color: var(--s3); }
+  .score-btn.s4 { background: var(--s4-bg); color: var(--s4); }
+  .score-btn:hover { transform: scale(1.1); }
+
+  /* GRID VIEW */
+  .grid-wrapper {
+    overflow-x: auto;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+  }
+  .grid-table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 800px;
+  }
+  .grid-table th {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 10px 8px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    text-align: center;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+  }
+  .grid-table th.student-col { text-align: left; padding-left: 16px; min-width: 130px; position: sticky; left: 0; z-index: 2; }
+  .grid-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    text-align: center;
+    vertical-align: middle;
+  }
+  .grid-table td.student-col {
+    text-align: left;
+    padding-left: 16px;
+    font-size: 13px;
+    font-weight: 500;
+    background: var(--surface);
+    position: sticky;
+    left: 0;
+    border-right: 1px solid var(--border);
+  }
+  .grid-table tr:last-child td { border-bottom: none; }
+  .grid-table tr:hover td { background: var(--surface2); }
+  .grid-table tr:hover td.student-col { background: var(--surface2); }
+
+  /* SKILL GROUP HEADER */
+  .group-header th {
+    background: var(--bg);
+    color: var(--accent2);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .group-header th.student-col { color: transparent; background: var(--bg); }
+
+  /* STUDENT VIEW */
+  .student-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .student-name-header {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: var(--text);
+  }
+  .skill-section-title {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent2);
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .skill-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .skill-row:last-child { border-bottom: none; }
+  .skill-name { font-size: 13px; flex: 1; color: var(--text); }
+  .score-group { display: flex; gap: 4px; }
+
+  /* HEATMAP */
+  .heatmap-cell {
+    width: 28px; height: 28px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    margin: 1px;
+  }
+  .hm0 { background: var(--surface2); color: var(--muted); }
+  .hm1 { background: var(--s1-bg); color: var(--s1); }
+  .hm2 { background: var(--s2-bg); color: var(--s2); }
+  .hm3 { background: var(--s3-bg); color: var(--s3); }
+  .hm4 { background: var(--s4-bg); color: var(--s4); }
+
+  /* PROGRESS VIEW */
+  .progress-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 12px;
+  }
+  .progress-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .progress-student { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+  .progress-skill-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 5px;
+    font-size: 12px;
+  }
+  .progress-skill-name { flex: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .progress-bar-bg {
+    width: 80px; height: 6px;
+    background: var(--surface2);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s;
+  }
+  .progress-val { font-family: 'DM Mono', monospace; font-size: 11px; width: 18px; text-align: right; }
+
+  /* MODAL */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 200;
+  }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px;
+    width: 460px;
+    max-width: 95vw;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 20px; }
+  .modal-field { margin-bottom: 14px; }
+  .modal-field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; font-weight: 500; }
+  .modal-field input, .modal-field textarea {
+    width: 100%;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 12px;
+    border-radius: 8px;
+    outline: none;
+  }
+  .modal-field input:focus, .modal-field textarea:focus { border-color: var(--accent); }
+  .modal-field textarea { resize: vertical; min-height: 80px; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+
+  /* LEGEND */
+  .legend {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+
+  /* EMPTY STATE */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--muted);
+  }
+  .empty-state h3 { font-size: 16px; margin-bottom: 8px; color: var(--text); }
+  .empty-state p { font-size: 13px; }
+
+  /* SETTINGS */
+  .settings-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .settings-title { font-size: 14px; font-weight: 600; margin-bottom: 16px; color: var(--text); }
+  .settings-row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+  .settings-input { flex: 1; }
+  .student-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--bg);
+    border-radius: 7px;
+    margin-bottom: 6px;
+    font-size: 13px;
+  }
+  .student-list-item .del-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .student-list-item .del-btn:hover { color: #ef4444; background: var(--s1-bg); }
+
+  .period-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .period-tab {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 6px 16px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .period-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .period-tab:hover:not(.active) { border-color: var(--accent); color: var(--accent); }
+
+  .toast {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 18px;
+    font-size: 13px;
+    z-index: 300;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    animation: slideUp 0.2s ease;
+  }
+  @keyframes slideUp { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform: translateY(0); } }
+
+  .date-input {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 7px 12px;
+    border-radius: 7px;
+    outline: none;
+    cursor: pointer;
+  }
+  .date-input:focus { border-color: var(--accent); }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+// ─── DEFAULT DATA ───────────────────────────────────────────────────────────
+const DEFAULT_REGENTS_SKILLS = [
+  "Polynomial Operations","Factoring","Rational Expressions","Radical Expressions",
+  "Complex Numbers","Quadratic Equations","Quadratic Formula","Systems of Equations",
+  "Absolute Value Equations","Inequalities","Functions – Domain & Range","Function Notation",
+  "Transformations of Functions","Inverse Functions","Exponential Functions","Logarithms",
+  "Exponential Equations","Log Equations","Sequences & Series","Arithmetic Sequences",
+  "Geometric Sequences","Trigonometry – Unit Circle","Sine & Cosine Graphs","Trig Equations",
+  "Law of Sines","Law of Cosines","Statistics – Normal Distribution","Regression & Correlation",
+  "Probability","Binomial Theorem"
+];
+
+const DEFAULT_CALC_SKILLS = [
+  "Graphing Functions","Finding Zeros","Intersection of Graphs","Table of Values",
+  "Regression (LinReg/QuadReg)","Storing Values","Evaluating Expressions","Solving Equations (Solver)",
+  "Trig Mode Settings","Stat Plots"
+];
+
+const DEFAULT_PERIODS = ["Period 1","Period 2","Period 3","Period 4","Period 5"];
+
+const SCORE_COLORS = { 0:'--muted', 1:'--s1', 2:'--s2', 3:'--s3', 4:'--s4' };
+const SCORE_LABELS = { 1:'Beginning', 2:'Developing', 3:'Proficient', 4:'Mastery' };
+
+// ─── STORAGE ─────────────────────────────────────────────────────────────────
+function loadState() {
+  try {
+    const raw = localStorage.getItem('a2_skill_tracker');
+    if (raw) return JSON.parse(raw);
+  } catch(e) {}
+  return {
+    periods: DEFAULT_PERIODS,
+    students: {},   // periodName -> [{id, name}]
+    scores: {},     // `${periodName}|${studentId}|${skillKey}` -> {score, date, history:[{score,date}]}
+    regentsSkills: DEFAULT_REGENTS_SKILLS,
+    calcSkills: DEFAULT_CALC_SKILLS,
+    scriptUrl: '',
+  };
+}
+
+function saveState(state) {
+  localStorage.setItem('a2_skill_tracker', JSON.stringify(state));
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+function uid() { return Math.random().toString(36).slice(2,9); }
+function today() { return new Date().toISOString().slice(0,10); }
+
+function scoreKey(period, studentId, skillKey) {
+  return `${period}|${studentId}|${skillKey}`;
+}
+
+// ─── APP ─────────────────────────────────────────────────────────────────────
+function App() {
+  const [state, setState] = React.useState(loadState);
+  const [tab, setTab] = React.useState('entry');
+  const [activePeriod, setActivePeriod] = React.useState(() => {
+    const s = loadState();
+    return s.periods[0] || 'Period 1';
+  });
+  const [entryDate, setEntryDate] = React.useState(today());
+  const [syncStatus, setSyncStatus] = React.useState('idle'); // idle | saving | ok | error
+  const [toast, setToast] = React.useState(null);
+  const [modal, setModal] = React.useState(null);
+  const [filterStudent, setFilterStudent] = React.useState('');
+  const [newStudentName, setNewStudentName] = React.useState('');
+  const [newPeriodName, setNewPeriodName] = React.useState('');
+  const [scriptUrl, setScriptUrl] = React.useState(() => loadState().scriptUrl || '');
+  const toastTimer = React.useRef(null);
+
+  // persist
+  React.useEffect(() => { saveState({...state, scriptUrl}); }, [state, scriptUrl]);
+
+  function showToast(msg, color='var(--s3)') {
+    clearTimeout(toastTimer.current);
+    setToast({msg, color});
+    toastTimer.current = setTimeout(() => setToast(null), 3000);
+  }
+
+  // ── score update ──
+  function setScore(studentId, skillKey, score) {
+    const key = scoreKey(activePeriod, studentId, skillKey);
+    setState(prev => {
+      const existing = prev.scores[key] || { score: 0, date: entryDate, history: [] };
+      const history = [...(existing.history || [])];
+      if (existing.score > 0) {
+        history.push({ score: existing.score, date: existing.date });
+      }
+      const updated = { score, date: entryDate, history };
+      return { ...prev, scores: { ...prev.scores, [key]: updated } };
+    });
+    // sync to sheets
+    if (scriptUrl) syncToSheets(studentId, skillKey, score);
+  }
+
+  function getScore(studentId, skillKey) {
+    const key = scoreKey(activePeriod, studentId, skillKey);
+    return state.scores[key]?.score || 0;
+  }
+
+  function getHistory(studentId, skillKey) {
+    const key = scoreKey(activePeriod, studentId, skillKey);
+    const entry = state.scores[key];
+    if (!entry) return [];
+    return [...(entry.history || []), ...(entry.score > 0 ? [{score: entry.score, date: entry.date}] : [])];
+  }
+
+  // ── sync to sheets ──
+  async function syncToSheets(studentId, skillKey, score) {
+    if (!scriptUrl) return;
+    setSyncStatus('saving');
+    const students = state.students[activePeriod] || [];
+    const student = students.find(s => s.id === studentId);
+    const skillGroup = state.calcSkills.includes(skillKey) ? 'Calculator' : 'Regents';
+    try {
+      await fetch(scriptUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: entryDate,
+          period: activePeriod,
+          student: student?.name || studentId,
+          skill: skillKey,
+          skillGroup,
+          score,
+        })
+      });
+      setSyncStatus('ok');
+      setTimeout(() => setSyncStatus('idle'), 2000);
+    } catch(e) {
+      setSyncStatus('error');
+    }
+  }
+
+  // ── students ──
+  function addStudent() {
+    const name = newStudentName.trim();
+    if (!name) return;
+    setState(prev => {
+      const periodStudents = prev.students[activePeriod] || [];
+      if (periodStudents.find(s => s.name.toLowerCase() === name.toLowerCase())) {
+        showToast('Student already exists', 'var(--s2)');
+        return prev;
+      }
+      return {
+        ...prev,
+        students: {
+          ...prev.students,
+          [activePeriod]: [...periodStudents, { id: uid(), name }]
+        }
+      };
+    });
+    setNewStudentName('');
+  }
+
+  function removeStudent(id) {
+    setState(prev => ({
+      ...prev,
+      students: {
+        ...prev.students,
+        [activePeriod]: (prev.students[activePeriod] || []).filter(s => s.id !== id)
+      }
+    }));
+  }
+
+  function addPeriod() {
+    const name = newPeriodName.trim();
+    if (!name || state.periods.includes(name)) return;
+    setState(prev => ({ ...prev, periods: [...prev.periods, name] }));
+    setNewPeriodName('');
+    setActivePeriod(name);
+  }
+
+  function removePeriod(p) {
+    if (state.periods.length <= 1) return;
+    const next = state.periods.filter(x => x !== p);
+    setState(prev => ({ ...prev, periods: next }));
+    if (activePeriod === p) setActivePeriod(next[0]);
+  }
+
+  const allSkills = [
+    ...state.regentsSkills.map(s => ({ key: s, label: s, group: 'Regents' })),
+    ...state.calcSkills.map(s => ({ key: s, label: s, group: 'Calculator' }))
+  ];
+
+  const periodStudents = (state.students[activePeriod] || [])
+    .filter(s => !filterStudent || s.name.toLowerCase().includes(filterStudent.toLowerCase()));
+
+  // ─────────────────────────────────────────────────────────────────────────
+  return (
+    <div>
+      {/* HEADER */}
+      <div className="header">
+        <div className="header-title">A2 <span>Skill Tracker</span></div>
+        <div className="nav-tabs">
+          {['entry','heatmap','progress','settings'].map(t => (
+            <button key={t} className={`nav-tab ${tab===t?'active':''}`} onClick={() => setTab(t)}>
+              {t.charAt(0).toUpperCase()+t.slice(1)}
+            </button>
+          ))}
+        </div>
+        <div className="header-sep" />
+        <div className="sync-badge">
+          <div className={`sync-dot ${syncStatus==='ok'?'ok':syncStatus==='saving'?'saving':syncStatus==='error'?'error':''}`} />
+          {syncStatus==='saving'?'Saving…':syncStatus==='ok'?'Saved':syncStatus==='error'?'Sync error':'Ready'}
+        </div>
+      </div>
+
+      <div className="main">
+        {/* PERIOD TABS */}
+        {tab !== 'settings' && (
+          <div className="period-tabs">
+            {state.periods.map(p => (
+              <button key={p} className={`period-tab ${activePeriod===p?'active':''}`} onClick={() => { setActivePeriod(p); setFilterStudent(''); }}>
+                {p}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* ── ENTRY TAB ── */}
+        {tab === 'entry' && <EntryView
+          students={periodStudents}
+          allSkills={allSkills}
+          getScore={getScore}
+          setScore={setScore}
+          filterStudent={filterStudent}
+          setFilterStudent={setFilterStudent}
+          entryDate={entryDate}
+          setEntryDate={setEntryDate}
+          activePeriod={activePeriod}
+          showToast={showToast}
+        />}
+
+        {/* ── HEATMAP TAB ── */}
+        {tab === 'heatmap' && <HeatmapView
+          students={periodStudents}
+          allSkills={allSkills}
+          getScore={getScore}
+          filterStudent={filterStudent}
+          setFilterStudent={setFilterStudent}
+        />}
+
+        {/* ── PROGRESS TAB ── */}
+        {tab === 'progress' && <ProgressView
+          students={periodStudents}
+          allSkills={allSkills}
+          getScore={getScore}
+          getHistory={getHistory}
+          filterStudent={filterStudent}
+          setFilterStudent={setFilterStudent}
+        />}
+
+        {/* ── SETTINGS TAB ── */}
+        {tab === 'settings' && <SettingsView
+          state={state}
+          setState={setState}
+          activePeriod={activePeriod}
+          setActivePeriod={setActivePeriod}
+          newStudentName={newStudentName}
+          setNewStudentName={setNewStudentName}
+          newPeriodName={newPeriodName}
+          setNewPeriodName={setNewPeriodName}
+          addStudent={addStudent}
+          removeStudent={removeStudent}
+          addPeriod={addPeriod}
+          removePeriod={removePeriod}
+          scriptUrl={scriptUrl}
+          setScriptUrl={setScriptUrl}
+          showToast={showToast}
+        />}
+      </div>
+
+      {toast && (
+        <div className="toast">
+          <span style={{color: toast.color}}>●</span>
+          {toast.msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ENTRY VIEW ──────────────────────────────────────────────────────────────
+function EntryView({ students, allSkills, getScore, setScore, filterStudent, setFilterStudent, entryDate, setEntryDate, activePeriod, showToast }) {
+  const regents = allSkills.filter(s => s.group === 'Regents');
+  const calc = allSkills.filter(s => s.group === 'Calculator');
+
+  if (students.length === 0) {
+    return <div className="empty-state">
+      <h3>No students in {activePeriod}</h3>
+      <p>Go to Settings to add students.</p>
+    </div>;
+  }
+
+  return (
+    <div>
+      <div className="toolbar">
+        <span className="toolbar-label">Date</span>
+        <input type="date" className="date-input" value={entryDate} onChange={e => setEntryDate(e.target.value)} />
+        <span className="toolbar-label" style={{marginLeft:8}}>Filter</span>
+        <input type="text" placeholder="Search student…" value={filterStudent} onChange={e => setFilterStudent(e.target.value)} />
+        <div style={{marginLeft:'auto', display:'flex', gap:6}}>
+          <Legend />
+        </div>
+      </div>
+
+      <div className="grid-wrapper">
+        <table className="grid-table">
+          <thead>
+            <tr className="group-header">
+              <th className="student-col"></th>
+              <th colSpan={regents.length} style={{color:'var(--accent2)', textAlign:'left', paddingLeft:8}}>REGENTS SKILLS ({regents.length})</th>
+              <th colSpan={calc.length} style={{color:'var(--accent)', textAlign:'left', paddingLeft:8}}>CALCULATOR SKILLS ({calc.length})</th>
+            </tr>
+            <tr>
+              <th className="student-col">Student</th>
+              {allSkills.map(s => (
+                <th key={s.key} title={s.label}>{s.label.length > 12 ? s.label.slice(0,11)+'…' : s.label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {students.map(student => (
+              <tr key={student.id}>
+                <td className="student-col">{student.name}</td>
+                {allSkills.map(s => {
+                  const score = getScore(student.id, s.key);
+                  return (
+                    <td key={s.key}>
+                      <ScoreCell score={score} onChange={v => setScore(student.id, s.key, v)} />
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ScoreCell({ score, onChange }) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    function handler(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div style={{position:'relative', display:'inline-block'}} ref={ref}>
+      <button
+        className={`score-btn s${score}`}
+        onClick={() => setOpen(o => !o)}
+        title={score > 0 ? SCORE_LABELS[score] : 'Not scored'}
+      >
+        {score > 0 ? score : '·'}
+      </button>
+      {open && (
+        <div style={{
+          position:'absolute', top:'calc(100% + 4px)', left:'50%', transform:'translateX(-50%)',
+          background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8,
+          padding:6, display:'flex', flexDirection:'column', gap:4, zIndex:50,
+          boxShadow:'0 8px 24px rgba(0,0,0,0.4)', minWidth:100
+        }}>
+          {[1,2,3,4].map(v => (
+            <button key={v} className={`score-btn s${v}`} style={{width:'100%', height:28, borderRadius:6, fontSize:12, display:'flex', alignItems:'center', gap:8, justifyContent:'flex-start', padding:'0 8px'}}
+              onClick={() => { onChange(v); setOpen(false); }}>
+              <span style={{fontFamily:'DM Mono', fontSize:13}}>{v}</span>
+              <span style={{fontSize:11}}>{SCORE_LABELS[v]}</span>
+            </button>
+          ))}
+          {score > 0 && (
+            <button className="score-btn s0" style={{width:'100%', height:24, borderRadius:6, fontSize:11}}
+              onClick={() => { onChange(0); setOpen(false); }}>Clear</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── HEATMAP VIEW ────────────────────────────────────────────────────────────
+function HeatmapView({ students, allSkills, getScore, filterStudent, setFilterStudent }) {
+  const regents = allSkills.filter(s => s.group === 'Regents');
+  const calc = allSkills.filter(s => s.group === 'Calculator');
+
+  if (students.length === 0) {
+    return <div className="empty-state"><h3>No students yet</h3><p>Add students in Settings.</p></div>;
+  }
+
+  return (
+    <div>
+      <div className="toolbar">
+        <input type="text" placeholder="Search student…" value={filterStudent} onChange={e => setFilterStudent(e.target.value)} />
+        <div style={{marginLeft:'auto'}}><Legend /></div>
+      </div>
+      <div className="grid-wrapper">
+        <table className="grid-table">
+          <thead>
+            <tr className="group-header">
+              <th className="student-col"></th>
+              <th colSpan={regents.length} style={{color:'var(--accent2)', textAlign:'left', paddingLeft:8}}>REGENTS SKILLS</th>
+              <th colSpan={calc.length} style={{color:'var(--accent)', textAlign:'left', paddingLeft:8}}>CALCULATOR SKILLS</th>
+            </tr>
+            <tr>
+              <th className="student-col">Student</th>
+              {allSkills.map(s => <th key={s.key} title={s.label}>{s.label.length>10?s.label.slice(0,9)+'…':s.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {students.map(student => (
+              <tr key={student.id}>
+                <td className="student-col">{student.name}</td>
+                {allSkills.map(s => {
+                  const sc = getScore(student.id, s.key);
+                  return <td key={s.key}>
+                    <div className={`heatmap-cell hm${sc}`} title={sc>0?SCORE_LABELS[sc]:'Not scored'}>
+                      {sc > 0 ? sc : ''}
+                    </div>
+                  </td>;
+                })}
+              </tr>
+            ))}
+            {/* Class averages row */}
+            <tr style={{borderTop:'2px solid var(--border)'}}>
+              <td className="student-col" style={{color:'var(--accent)', fontSize:11, fontWeight:600}}>CLASS AVG</td>
+              {allSkills.map(s => {
+                const scored = students.map(st => getScore(st.id, s.key)).filter(v => v > 0);
+                const avg = scored.length ? (scored.reduce((a,b)=>a+b,0)/scored.length) : 0;
+                const level = avg === 0 ? 0 : avg < 1.5 ? 1 : avg < 2.5 ? 2 : avg < 3.5 ? 3 : 4;
+                return <td key={s.key}>
+                  <div className={`heatmap-cell hm${level}`} title={avg ? avg.toFixed(1) : 'No data'}>
+                    {avg ? avg.toFixed(1) : ''}
+                  </div>
+                </td>;
+              })}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── PROGRESS VIEW ───────────────────────────────────────────────────────────
+function ProgressView({ students, allSkills, getScore, getHistory, filterStudent, setFilterStudent }) {
+  const [selected, setSelected] = React.useState(null);
+
+  if (students.length === 0) {
+    return <div className="empty-state"><h3>No students yet</h3><p>Add students in Settings.</p></div>;
+  }
+
+  const student = selected ? students.find(s => s.id === selected) : null;
+
+  return (
+    <div>
+      <div className="toolbar">
+        <span className="toolbar-label">Student</span>
+        <select value={selected || ''} onChange={e => setSelected(e.target.value || null)}>
+          <option value="">— All students —</option>
+          {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <input type="text" placeholder="Search…" value={filterStudent} onChange={e => setFilterStudent(e.target.value)} />
+      </div>
+
+      {student ? (
+        <StudentProgress student={student} allSkills={allSkills} getScore={getScore} getHistory={getHistory} />
+      ) : (
+        <div className="progress-grid">
+          {students.map(s => (
+            <div key={s.id} className="progress-card" style={{cursor:'pointer'}} onClick={() => setSelected(s.id)}>
+              <div className="progress-student">{s.name}</div>
+              {allSkills.slice(0,8).map(sk => {
+                const sc = getScore(s.id, sk.key);
+                return (
+                  <div key={sk.key} className="progress-skill-row">
+                    <span className="progress-skill-name" title={sk.label}>{sk.label}</span>
+                    <div className="progress-bar-bg">
+                      <div className="progress-bar-fill" style={{
+                        width: sc ? `${sc/4*100}%` : '0%',
+                        background: sc===1?'var(--s1)':sc===2?'var(--s2)':sc===3?'var(--s3)':sc===4?'var(--s4)':'var(--surface2)'
+                      }} />
+                    </div>
+                    <span className="progress-val" style={{color: sc?`var(--s${sc})`:'var(--muted)'}}>{sc||'—'}</span>
+                  </div>
+                );
+              })}
+              {allSkills.length > 8 && <div style={{fontSize:11,color:'var(--muted)',marginTop:8}}>+{allSkills.length-8} more skills…</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StudentProgress({ student, allSkills, getScore, getHistory }) {
+  const regents = allSkills.filter(s => s.group === 'Regents');
+  const calc = allSkills.filter(s => s.group === 'Calculator');
+
+  function SkillProgressRow({ skill }) {
+    const sc = getScore(student.id, skill.key);
+    const hist = getHistory(student.id, skill.key);
+    return (
+      <div className="skill-row">
+        <span className="skill-name">{skill.label}</span>
+        <div style={{display:'flex', alignItems:'center', gap:6}}>
+          {hist.length > 1 && (
+            <div style={{display:'flex', gap:2, alignItems:'center'}}>
+              {hist.slice(-5).map((h,i) => (
+                <div key={i} style={{
+                  width:16, height:16, borderRadius:3, fontSize:10,
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  fontFamily:'DM Mono',
+                  background: h.score===1?'var(--s1-bg)':h.score===2?'var(--s2-bg)':h.score===3?'var(--s3-bg)':'var(--s4-bg)',
+                  color: h.score===1?'var(--s1)':h.score===2?'var(--s2)':h.score===3?'var(--s3)':'var(--s4)',
+                }} title={h.date}>{h.score}</div>
+              ))}
+              {hist.length > 5 && <span style={{fontSize:10,color:'var(--muted)'}}>+{hist.length-5}</span>}
+            </div>
+          )}
+          <div className={`heatmap-cell hm${sc}`} style={{width:32,height:32,borderRadius:6,fontSize:14}}>
+            {sc > 0 ? sc : '—'}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const regentsDone = regents.filter(s => getScore(student.id, s.key) > 0).length;
+  const calcDone = calc.filter(s => getScore(student.id, s.key) > 0).length;
+
+  return (
+    <div>
+      <div style={{display:'flex', gap:16, marginBottom:20, flexWrap:'wrap'}}>
+        <div className="student-card" style={{flex:'0 0 auto'}}>
+          <div className="student-name-header">{student.name}</div>
+          <div style={{display:'flex', gap:16}}>
+            <StatBox label="Regents scored" val={`${regentsDone}/${regents.length}`} />
+            <StatBox label="Calc scored" val={`${calcDone}/${calc.length}`} />
+            <StatBox label="Total scored" val={`${regentsDone+calcDone}/${regents.length+calc.length}`} />
+          </div>
+        </div>
+      </div>
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:20}}>
+        <div className="student-card">
+          <div className="skill-section-title">Regents Skills</div>
+          {regents.map(s => <SkillProgressRow key={s.key} skill={s} />)}
+        </div>
+        <div className="student-card">
+          <div className="skill-section-title">Calculator Skills</div>
+          {calc.map(s => <SkillProgressRow key={s.key} skill={s} />)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatBox({ label, val }) {
+  return (
+    <div style={{textAlign:'center'}}>
+      <div style={{fontFamily:'DM Mono', fontSize:22, fontWeight:500, color:'var(--accent)'}}>{val}</div>
+      <div style={{fontSize:11, color:'var(--muted)', marginTop:2}}>{label}</div>
+    </div>
+  );
+}
+
+// ─── SETTINGS VIEW ───────────────────────────────────────────────────────────
+function SettingsView({ state, setState, activePeriod, setActivePeriod, newStudentName, setNewStudentName, newPeriodName, setNewPeriodName, addStudent, removeStudent, addPeriod, removePeriod, scriptUrl, setScriptUrl, showToast }) {
+
+  function bulkAddStudents(text) {
+    const names = text.split('\n').map(s=>s.trim()).filter(Boolean);
+    setState(prev => {
+      const existing = prev.students[activePeriod] || [];
+      const existingNames = new Set(existing.map(s=>s.name.toLowerCase()));
+      const toAdd = names.filter(n => !existingNames.has(n.toLowerCase())).map(n => ({id:uid(),name:n}));
+      return { ...prev, students: { ...prev.students, [activePeriod]: [...existing, ...toAdd] } };
+    });
+    showToast(`Added students to ${activePeriod}`);
+  }
+
+  const [bulkText, setBulkText] = React.useState('');
+
+  return (
+    <div style={{maxWidth:700}}>
+      {/* Periods */}
+      <div className="settings-section">
+        <div className="settings-title">Periods</div>
+        <div style={{display:'flex', gap:6, flexWrap:'wrap', marginBottom:12}}>
+          {state.periods.map(p => (
+            <div key={p} style={{display:'flex',alignItems:'center',gap:4,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:20,padding:'4px 12px'}}>
+              <span style={{fontSize:13}}>{p}</span>
+              {state.periods.length > 1 && (
+                <button onClick={() => removePeriod(p)} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:14,padding:'0 2px'}} title="Remove">×</button>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="settings-row">
+          <input type="text" className="settings-input" placeholder="New period name…" value={newPeriodName} onChange={e=>setNewPeriodName(e.target.value)}
+            onKeyDown={e=>e.key==='Enter'&&addPeriod()} />
+          <button className="btn btn-primary" onClick={addPeriod}>Add Period</button>
+        </div>
+      </div>
+
+      {/* Students */}
+      <div className="settings-section">
+        <div className="settings-title">Students — {activePeriod}</div>
+        <div style={{marginBottom:12}}>
+          <div className="period-tabs">
+            {state.periods.map(p=>(
+              <button key={p} className={`period-tab ${activePeriod===p?'active':''}`} onClick={()=>setActivePeriod(p)}>{p}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* single add */}
+        <div className="settings-row" style={{marginBottom:16}}>
+          <input type="text" className="settings-input" placeholder="Student name…" value={newStudentName} onChange={e=>setNewStudentName(e.target.value)}
+            onKeyDown={e=>e.key==='Enter'&&addStudent()} />
+          <button className="btn btn-primary" onClick={addStudent}>Add</button>
+        </div>
+
+        {/* bulk add */}
+        <div className="modal-field" style={{marginBottom:12}}>
+          <label>Bulk add (one name per line)</label>
+          <textarea value={bulkText} onChange={e=>setBulkText(e.target.value)} placeholder={"Alice\nBob\nCarlos"} style={{background:'var(--bg)'}} />
+        </div>
+        <button className="btn btn-ghost" onClick={() => { bulkAddStudents(bulkText); setBulkText(''); }}>Add All</button>
+
+        {/* list */}
+        <div style={{marginTop:16, maxHeight:300, overflowY:'auto'}}>
+          {(state.students[activePeriod]||[]).map(s => (
+            <div key={s.id} className="student-list-item">
+              <span>{s.name}</span>
+              <button className="del-btn" onClick={() => removeStudent(s.id)}>×</button>
+            </div>
+          ))}
+          {!(state.students[activePeriod]||[]).length && (
+            <div style={{color:'var(--muted)',fontSize:13,padding:'12px 0'}}>No students yet.</div>
+          )}
+        </div>
+      </div>
+
+      {/* Skills Import */}
+      <SkillsImport state={state} setState={setState} showToast={showToast} />
+
+      {/* Google Sheets Sync */}
+      <div className="settings-section">
+        <div className="settings-title">Google Sheets Sync</div>
+        <p style={{fontSize:13,color:'var(--muted)',marginBottom:12,lineHeight:1.6}}>
+          Paste your Apps Script Web App URL below. Every score you enter will be logged to your Google Sheet as a row: <span style={{fontFamily:'DM Mono',fontSize:11,color:'var(--accent)'}}>date | period | student | skill | score</span>
+        </p>
+        <div className="settings-row">
+          <input type="text" className="settings-input" style={{flex:1}} placeholder="https://script.google.com/macros/s/…/exec"
+            value={scriptUrl} onChange={e=>setScriptUrl(e.target.value)} />
+          <button className="btn btn-ghost" onClick={() => { setScriptUrl(''); showToast('URL cleared'); }}>Clear</button>
+        </div>
+        <div style={{marginTop:16,background:'var(--bg)',borderRadius:8,padding:14,fontSize:12,color:'var(--muted)',lineHeight:1.7}}>
+          <strong style={{color:'var(--text)'}}>Apps Script setup:</strong><br/>
+          1. Open a Google Sheet → Extensions → Apps Script<br/>
+          2. Paste the provided <code style={{color:'var(--accent)'}}>Code.gs</code> script<br/>
+          3. Deploy → New deployment → Web app → Anyone → Copy URL<br/>
+          4. Paste URL above
+        </div>
+      </div>
+
+      {/* Reset */}
+      <div className="settings-section">
+        <div className="settings-title">Danger Zone</div>
+        <button className="btn btn-danger" onClick={() => {
+          if (confirm('Reset ALL data? This cannot be undone.')) {
+            localStorage.removeItem('a2_skill_tracker');
+            window.location.reload();
+          }
+        }}>Reset All Data</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── SKILLS IMPORT ───────────────────────────────────────────────────────────
+function SkillsImport({ state, setState, showToast }) {
+  const [regentsText, setRegentsText] = React.useState(state.regentsSkills.join('\n'));
+  const [calcText, setCalcText] = React.useState(state.calcSkills.join('\n'));
+  const [tab, setTab] = React.useState('regents');
+  const regentsFileRef = React.useRef(null);
+  const calcFileRef = React.useRef(null);
+
+  function parseSkills(text) {
+    return text.split('\n').map(s => s.trim()).filter(Boolean);
+  }
+
+  function applyRegents() {
+    const skills = parseSkills(regentsText);
+    if (!skills.length) return showToast('No skills found', 'var(--s1)');
+    setState(prev => ({ ...prev, regentsSkills: skills }));
+    showToast(`${skills.length} Regents skills saved`);
+  }
+
+  function applyCalc() {
+    const skills = parseSkills(calcText);
+    if (!skills.length) return showToast('No skills found', 'var(--s1)');
+    setState(prev => ({ ...prev, calcSkills: skills }));
+    showToast(`${skills.length} Calculator skills saved`);
+  }
+
+  function handleFile(e, target) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = evt => {
+      const text = evt.target.result;
+      // Handle CSV (first column) or plain text (one per line)
+      let lines;
+      if (file.name.endsWith('.csv')) {
+        lines = text.split('\n').map(row => row.split(',')[0].replace(/"/g,'').trim()).filter(Boolean);
+      } else {
+        lines = text.split('\n').map(s => s.trim()).filter(Boolean);
+      }
+      const joined = lines.join('\n');
+      if (target === 'regents') setRegentsText(joined);
+      else setCalcText(joined);
+      showToast(`Loaded ${lines.length} skills from ${file.name}`);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+
+  function resetRegents() {
+    setRegentsText(DEFAULT_REGENTS_SKILLS.join('\n'));
+    setState(prev => ({ ...prev, regentsSkills: DEFAULT_REGENTS_SKILLS }));
+    showToast('Regents skills reset to defaults');
+  }
+
+  function resetCalc() {
+    setCalcText(DEFAULT_CALC_SKILLS.join('\n'));
+    setState(prev => ({ ...prev, calcSkills: DEFAULT_CALC_SKILLS }));
+    showToast('Calculator skills reset to defaults');
+  }
+
+  const isRegents = tab === 'regents';
+  const currentText = isRegents ? regentsText : calcText;
+  const setCurrentText = isRegents ? setRegentsText : setCalcText;
+  const currentCount = parseSkills(currentText).length;
+
+  return (
+    <div className="settings-section">
+      <div className="settings-title">Skills</div>
+      <p style={{fontSize:13,color:'var(--muted)',marginBottom:14,lineHeight:1.6}}>
+        Edit skill names directly, or import from a <strong style={{color:'var(--text)'}}>CSV</strong> or <strong style={{color:'var(--text)'}}>TXT</strong> file (one skill per line). Numbers are added automatically in the Sheet headers.
+      </p>
+
+      {/* Sub-tabs */}
+      <div className="nav-tabs" style={{marginBottom:14, width:'fit-content'}}>
+        <button className={`nav-tab ${tab==='regents'?'active':''}`} onClick={() => setTab('regents')}>
+          Regents ({state.regentsSkills.length})
+        </button>
+        <button className={`nav-tab ${tab==='calc'?'active':''}`} onClick={() => setTab('calc')}>
+          Calculator ({state.calcSkills.length})
+        </button>
+      </div>
+
+      {/* File import */}
+      <div style={{display:'flex', gap:8, marginBottom:12, alignItems:'center'}}>
+        <button className="btn btn-ghost" onClick={() => isRegents ? regentsFileRef.current.click() : calcFileRef.current.click()}>
+          📂 Import from file
+        </button>
+        <span style={{fontSize:12, color:'var(--muted)'}}>.txt or .csv accepted</span>
+        <input ref={regentsFileRef} type="file" accept=".txt,.csv" style={{display:'none'}} onChange={e => handleFile(e,'regents')} />
+        <input ref={calcFileRef} type="file" accept=".txt,.csv" style={{display:'none'}} onChange={e => handleFile(e,'calc')} />
+      </div>
+
+      {/* Text editor */}
+      <div className="modal-field" style={{marginBottom:10}}>
+        <label>One skill per line — {currentCount} skills</label>
+        <textarea
+          value={currentText}
+          onChange={e => setCurrentText(e.target.value)}
+          style={{background:'var(--bg)', minHeight:180, fontFamily:'DM Mono', fontSize:12}}
+          placeholder="Enter one skill per line…"
+        />
+      </div>
+
+      <div style={{display:'flex', gap:8}}>
+        <button className="btn btn-primary" onClick={isRegents ? applyRegents : applyCalc}>Save Skills</button>
+        <button className="btn btn-ghost" onClick={isRegents ? resetRegents : resetCalc}>Reset to Defaults</button>
+      </div>
+
+      {/* Preview */}
+      <div style={{marginTop:14, background:'var(--bg)', borderRadius:8, padding:12}}>
+        <div style={{fontSize:11, color:'var(--muted)', marginBottom:8, fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em'}}>Sheet column preview</div>
+        <div style={{display:'flex', flexWrap:'wrap', gap:4}}>
+          {parseSkills(currentText).slice(0,8).map((s,i) => {
+            const num = isRegents ? i+1 : state.regentsSkills.length + i + 1;
+            return (
+              <div key={i} style={{background:'var(--surface)', border:'1px solid var(--border)', borderRadius:5, padding:'3px 8px', fontSize:11, fontFamily:'DM Mono', color:'var(--accent)'}}>
+                {num} - {s}
+              </div>
+            );
+          })}
+          {parseSkills(currentText).length > 8 && (
+            <div style={{fontSize:11, color:'var(--muted)', padding:'3px 6px'}}>+{parseSkills(currentText).length - 8} more…</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── LEGEND ──────────────────────────────────────────────────────────────────
+function Legend() {
+  return (
+    <div className="legend">
+      {[1,2,3,4].map(v => (
+        <div key={v} className="legend-item">
+          <div className="legend-dot" style={{background:`var(--s${v})`}} />
+          <span>{v} – {SCORE_LABELS[v]}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── RENDER ───────────────────────────────────────────────────────────────────
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
